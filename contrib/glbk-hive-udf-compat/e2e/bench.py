@@ -84,8 +84,8 @@ def main():
     dop = cur.fetchone()[1]
     cur.execute("SELECT current_version()")
     version = cur.fetchone()[0]
-    cur.execute("ADMIN SHOW BACKEND CONFIG LIKE 'udf_thread_pool_size'")
-    udf_pool = [r for r in cur.fetchall()]
+    cur.execute("SELECT value FROM information_schema.be_configs WHERE name = 'udf_thread_pool_size'")
+    udf_pool = ",".join(str(r[0]) for r in cur.fetchall())
 
     results = []
     for name, udf, builtin in CASES:
