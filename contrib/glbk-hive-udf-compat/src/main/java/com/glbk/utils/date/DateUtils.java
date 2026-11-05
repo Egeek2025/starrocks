@@ -1,9 +1,22 @@
+/*
+ * Copy of com.glbk.utils.date.DateUtils from https://github.com/jet2007/HiveDateUDF (Apache-2.0).
+ *
+ * Changes from the upstream original (everything else, bugs included, is unchanged):
+ *   1. every Calendar.getInstance()          -> Calendar.getInstance(Locale.US)
+ *   2. every new SimpleDateFormat(fmt)       -> new SimpleDateFormat(fmt, Locale.US)
+ *   3. added import java.util.Locale
+ * Why: upstream used the JVM default Locale, so week results (first day of week, minimalDaysInFirstWeek)
+ * and text such as 'EEE' day names depended on the JVM Locale and JDK version (JDK 9+ CLDR makes zh_CN
+ * Monday-first; the original Hive ran on JDK 8, Sunday-first). Pinning Locale.US reproduces the original
+ * Hive behavior on any BE JVM. The default time zone is still used, as in the original.
+ */
 package com.glbk.utils.date;
 
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.Locale;
 
 import com.glbk.utils.string.StringUtils;
 
@@ -16,7 +29,7 @@ public class DateUtils {
      * @return date format String
      */
     public static String getFormatDate(Date date, String formatStr) {
-        SimpleDateFormat sdf = new SimpleDateFormat(formatStr);
+        SimpleDateFormat sdf = new SimpleDateFormat(formatStr, Locale.US);
         return sdf.format(date);
     }
 
@@ -26,7 +39,7 @@ public class DateUtils {
      * @return date type
      */
     public static Date parseByFormat(String dateStr, String format) {
-        SimpleDateFormat sdf = new SimpleDateFormat(format);
+        SimpleDateFormat sdf = new SimpleDateFormat(format, Locale.US);
         Date date = null;
         try {
             date = sdf.parse(dateStr);
@@ -157,7 +170,7 @@ public class DateUtils {
         if (offsets == null || offsets.length == 0) {
             return date;
         } else {
-            Calendar cal = Calendar.getInstance();
+            Calendar cal = Calendar.getInstance(Locale.US);
             cal.setTime(date);
 
             for (int i = 0; i < offsets.length; i++) {
@@ -212,14 +225,14 @@ public class DateUtils {
      */
     public static long dateDiff(Date date1, Date date2, String interval) {
         if ("year".equals(interval) || "y".equals(interval)) {
-            Calendar calendar = Calendar.getInstance();
+            Calendar calendar = Calendar.getInstance(Locale.US);
             calendar.setTime(date1);
             int time = calendar.get(Calendar.YEAR);
             calendar.setTime(date2);
             return time - calendar.get(Calendar.YEAR);
         }
         if ("quarter".equals(interval) || "q".equals(interval)) {
-            Calendar calendar = Calendar.getInstance();
+            Calendar calendar = Calendar.getInstance(Locale.US);
             calendar.setTime(date1);
             int time = calendar.get(Calendar.YEAR) * 4;
             calendar.setTime(date2);
@@ -230,7 +243,7 @@ public class DateUtils {
             return time - calendar.get(Calendar.MONTH) / 4;
         }
         if ("month".equals(interval) || "m".equals(interval)) {
-            Calendar calendar = Calendar.getInstance();
+            Calendar calendar = Calendar.getInstance(Locale.US);
             calendar.setTime(date1);
             int time = calendar.get(Calendar.YEAR) * 12;
             calendar.setTime(date2);
@@ -241,7 +254,7 @@ public class DateUtils {
             return time - calendar.get(Calendar.MONTH);
         }
         if ("week".equals(interval) || "w".equals(interval)) {
-            Calendar calendar = Calendar.getInstance();
+            Calendar calendar = Calendar.getInstance(Locale.US);
             calendar.setTime(date1);
             int time = calendar.get(Calendar.YEAR) * 52;
             calendar.setTime(date2);
@@ -283,7 +296,7 @@ public class DateUtils {
             return getFormatDate(date, "yyyy") + "0101";
         }
         if ("quarter".equals(dtype) || "q".equals(dtype)) {
-            Calendar cal = Calendar.getInstance();
+            Calendar cal = Calendar.getInstance(Locale.US);
             cal.setTime(date);
             int month = cal.get(Calendar.MONTH);
             month = (month / 3) * 3;
@@ -296,7 +309,7 @@ public class DateUtils {
             return getFormatDate(date, "yyyyMM") + "01";
         }
         if ("week".equals(dtype) || "w".equals(dtype)) {
-            Calendar cal = Calendar.getInstance();
+            Calendar cal = Calendar.getInstance(Locale.US);
             cal.setTime(date);
             cal.set(Calendar.DAY_OF_WEEK, Calendar.SUNDAY);
             Date dt = cal.getTime();
@@ -317,7 +330,7 @@ public class DateUtils {
             return getFormatDate(date, "yyyy") + "1231";
         }
         if ("quarter".equals(dtype) || "q".equals(dtype)) {
-            Calendar cal = Calendar.getInstance();
+            Calendar cal = Calendar.getInstance(Locale.US);
             cal.setTime(date);
             int month = cal.get(Calendar.MONTH);
             month = (month / 3) * 3;
@@ -332,7 +345,7 @@ public class DateUtils {
             return getFormatDate(dt, "yyyyMMdd");
         }
         if ("week".equals(dtype) || "w".equals(dtype)) {
-            Calendar cal = Calendar.getInstance();
+            Calendar cal = Calendar.getInstance(Locale.US);
             cal.setTime(date);
             cal.set(Calendar.DAY_OF_WEEK, Calendar.SATURDAY);
             Date dt = cal.getTime();
@@ -349,12 +362,12 @@ public class DateUtils {
      */
     public static int getHowManyDay(Date date, String dtype) {
         if ("year".equals(dtype) || "y".equals(dtype)) {
-            Calendar cal = Calendar.getInstance();
+            Calendar cal = Calendar.getInstance(Locale.US);
             cal.setTime(date);
             return cal.get(Calendar.DAY_OF_YEAR);
         }
         if ("quarter".equals(dtype) || "q".equals(dtype)) {
-            Calendar cal = Calendar.getInstance();
+            Calendar cal = Calendar.getInstance(Locale.US);
             cal.setTime(date);
             int month = cal.get(Calendar.MONTH);
             month = (month / 3) * 3;
@@ -366,12 +379,12 @@ public class DateUtils {
             return (int) (time1 - time2) + 1;
         }
         if ("month".equals(dtype) || "m".equals(dtype)) {
-            Calendar cal = Calendar.getInstance();
+            Calendar cal = Calendar.getInstance(Locale.US);
             cal.setTime(date);
             return cal.get(Calendar.DAY_OF_MONTH);
         }
         if ("week".equals(dtype) || "w".equals(dtype)) {
-            Calendar cal = Calendar.getInstance();
+            Calendar cal = Calendar.getInstance(Locale.US);
             cal.setTime(date);
             return cal.get(Calendar.DAY_OF_WEEK);
         }
