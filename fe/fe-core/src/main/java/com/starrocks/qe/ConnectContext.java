@@ -248,6 +248,10 @@ public class ConnectContext {
 
     private boolean relationAliasCaseInsensitive = false;
 
+    // Spark dialect: a database or table name that has no exact match is looked up case-insensitively, see
+    // SparkCaseInsensitiveNames. Bound for the duration of a statement of the Spark dialect.
+    private boolean metadataNameCaseInsensitive = false;
+
     // Keys of the views currently being expanded on the analysis path, used to detect cyclic view
     // definitions. It lives on the session (not on a single QueryAnalyzer.Visitor) so the path is
     // shared across the fresh QueryAnalyzer instances spawned for scalar/IN/EXISTS subqueries; a
@@ -1408,6 +1412,14 @@ public class ConnectContext {
         return relationAliasCaseInsensitive;
     }
 
+    public void setMetadataNameCaseInsensitive(boolean metadataNameCaseInsensitive) {
+        this.metadataNameCaseInsensitive = metadataNameCaseInsensitive;
+    }
+
+    public boolean isMetadataNameCaseInsensitive() {
+        return metadataNameCaseInsensitive;
+    }
+
     public Set<String> getViewExpansionPath() {
         return viewExpansionPath;
     }
@@ -1755,7 +1767,7 @@ public class ConnectContext {
     }
 
     public StmtExecutor executeSql(String sql) throws Exception {
-        StatementBase sqlStmt = SqlParser.parse(sql, getSessionVariable()).get(0);
+        StatementBase sqlStmt = SqlParser.parseOneWithStarRocksDialect(sql, getSessionVariable());
         sqlStmt.setOrigStmt(new OriginStatement(sql, 0));
         StmtExecutor executor = StmtExecutor.newInternalExecutor(this, sqlStmt);
         setExecutor(executor);

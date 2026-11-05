@@ -48,6 +48,8 @@ import com.starrocks.common.profile.Timer;
 import com.starrocks.common.profile.Tracers;
 import com.starrocks.common.util.concurrent.lock.SnapshotCopyValidator;
 import com.starrocks.connector.ConnectorMetadata;
+import com.starrocks.connector.parser.spark.SparkCaseInsensitiveNames;
+import com.starrocks.connector.parser.spark.SparkGenerators;
 import com.starrocks.qe.ConnectContext;
 import com.starrocks.server.CatalogMgr;
 import com.starrocks.server.GlobalStateMgr;
@@ -899,6 +901,9 @@ public class QueryAnalyzer {
                     // name: a pre-resolved table skips it, so qualify it here, or an unqualified name in the
                     // current external catalog reaches the lookup without its catalog and database.
                     tableName.normalization(session);
+                    if (session.isMetadataNameCaseInsensitive()) {
+                        SparkCaseInsensitiveNames.writeBack(tableName, null, table);
+                    }
                 }
                 // Taken before time travel binds, which reads the native table too.
                 if (table != null) {
@@ -1991,6 +1996,14 @@ public class QueryAnalyzer {
 
         @Override
         public Scope visitTableFunction(TableFunctionRelation node, Scope scope) {
+            if (node.getSparkGenerator() != null) {
+                // Spark explode/posexplode: the expansion depends on whether the argument is an array or a map
+                SparkGenerators.rewrite(node, argument -> {
+                    Expr probe = argument.clone();
+                    analyzeExpression(probe, new AnalyzeState(), scope);
+                    return probe.getType();
+                });
+            }
             AnalyzeState analyzeState = new AnalyzeState();
             List<Expr> args = node.getFunctionParams().exprs();
             Type[] argTypes = new Type[args.size()];
@@ -2894,6 +2907,12 @@ public class QueryAnalyzer {
 
             if (table instanceof OlapTable) {
                 ((OlapTable) table).maySetDatabaseId(db.getId());
+            }
+
+            if (session.isMetadataNameCaseInsensitive() && !tableRelation.isSyncMVQuery()) {
+                // Spark dialect: the names of the metadata replace the spelling of the query, so that the privilege
+                // check, the audit log and the dependencies of views see the real names
+                SparkCaseInsensitiveNames.writeBack(tableName, db.getFullName(), table);
             }
 
             return table;

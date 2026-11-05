@@ -45,6 +45,17 @@ public class TableFunctionRelation extends Relation {
 
     private boolean isLeftJoin = false;
 
+    /**
+     * Set by the Spark dialect parser for EXPLODE/POSEXPLODE. Whether the argument is an array or a map is only
+     * known after analysis, which then rewrites the (unnest) arguments and clears the marker.
+     */
+    private SparkGenerator sparkGenerator;
+
+    public enum SparkGenerator {
+        EXPLODE,
+        POSEXPLODE
+    }
+
     public TableFunctionRelation(FunctionCallExpr functionCallExpr) {
         this(functionCallExpr.getFnRef().getFnName().toString().toLowerCase(),
                 functionCallExpr.getParams(), functionCallExpr.getPos());
@@ -70,6 +81,14 @@ public class TableFunctionRelation extends Relation {
 
     public void setTableFunction(TableFunction tableFunction) {
         this.tableFunction = tableFunction;
+    }
+
+    public SparkGenerator getSparkGenerator() {
+        return sparkGenerator;
+    }
+
+    public void setSparkGenerator(SparkGenerator sparkGenerator) {
+        this.sparkGenerator = sparkGenerator;
     }
 
     public void setIsLeftJoin(boolean isLeftJoin) {

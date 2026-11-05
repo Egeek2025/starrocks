@@ -45,7 +45,7 @@ public final class IvmRefreshDefinition {
      * the refresh-time schema checker.
      */
     public static QueryStatement deriveRewrittenQuery(ConnectContext ctx, MaterializedView mv) {
-        List<StatementBase> statements = SqlParser.parse(mv.getViewDefineSql(), ctx.getSessionVariable());
+        List<StatementBase> statements = SqlParser.parseWithStarRocksDialect(mv.getViewDefineSql(), ctx.getSessionVariable());
         if (statements.isEmpty() || !(statements.get(0) instanceof QueryStatement)) {
             throw new SemanticException("MV %s has no valid query definition to re-derive", mv.getName());
         }
@@ -90,8 +90,8 @@ public final class IvmRefreshDefinition {
         // Normalize the frozen text through the same serializer before comparing: it was produced by
         // a different serializer than derivedSql, so a raw compare false-positives.
         try {
-            QueryStatement frozenQs = (QueryStatement) SqlParser.parse(frozen,
-                    ctx.getSessionVariable()).get(0);
+            QueryStatement frozenQs = (QueryStatement) SqlParser.parseOneWithStarRocksDialect(frozen,
+                    ctx.getSessionVariable());
             Analyzer.analyze(frozenQs, ctx);
             String normalizedFrozen = AstToSQLBuilder.buildSimple(frozenQs);
             if (!normalizedFrozen.equals(derivedSql)) {

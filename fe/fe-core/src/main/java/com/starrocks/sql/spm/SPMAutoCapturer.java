@@ -118,7 +118,8 @@ public class SPMAutoCapturer extends LeaderDaemon {
                 continue;
             }
             try (var scope = connect.bindScope()) {
-                List<StatementBase> stmt = SqlParser.parse(queryHistory.getOriginSQL(), connect.getSessionVariable());
+                List<StatementBase> stmt = SqlParser.parseWithStarRocksDialect(queryHistory.getOriginSQL(),
+                        connect.getSessionVariable());
                 Preconditions.checkState(stmt.size() == 1);
                 Preconditions.checkState(stmt.get(0) instanceof QueryStatement);
 

@@ -37,6 +37,7 @@ import com.starrocks.common.FeConstants;
 import com.starrocks.common.LabelAlreadyUsedException;
 import com.starrocks.common.profile.Timer;
 import com.starrocks.common.profile.Tracers;
+import com.starrocks.connector.parser.spark.SparkCaseInsensitiveNames;
 import com.starrocks.http.HttpConnectContext;
 import com.starrocks.planner.PlanFragment;
 import com.starrocks.planner.ResultSink;
@@ -141,7 +142,8 @@ public class StatementPlanner {
         PlannerMetaLocker plannerMetaLocker = null;
         // 1. For all queries, we need db lock when analyze phase
         try (var guard = session.bindScope();
-                var ignoredBudget = StatisticsLoadBudget.openScope(session)) {
+                var ignoredBudget = StatisticsLoadBudget.openScope(session);
+                var ignoredNames = SparkCaseInsensitiveNames.bind(session, stmt)) {
             SPMPlanner spmPlanner = new SPMPlanner(session);
             stmt = spmPlanner.plan(stmt);
 

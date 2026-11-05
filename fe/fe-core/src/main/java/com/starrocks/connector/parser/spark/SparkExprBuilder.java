@@ -23,10 +23,12 @@ import com.starrocks.sql.ast.ParseNode;
 import com.starrocks.sql.ast.QualifiedName;
 import com.starrocks.sql.ast.QueryRelation;
 import com.starrocks.sql.ast.QueryStatement;
+import com.starrocks.sql.ast.UnitIdentifier;
 import com.starrocks.sql.ast.expression.AnalyticExpr;
 import com.starrocks.sql.ast.expression.AnalyticWindow;
 import com.starrocks.sql.ast.expression.AnalyticWindowBoundary;
 import com.starrocks.sql.ast.expression.ArithmeticExpr;
+import com.starrocks.sql.ast.expression.ArrayExpr;
 import com.starrocks.sql.ast.expression.BetweenPredicate;
 import com.starrocks.sql.ast.expression.BinaryPredicate;
 import com.starrocks.sql.ast.expression.BinaryType;
@@ -47,17 +49,20 @@ import com.starrocks.sql.ast.expression.GroupingFunctionCallExpr;
 import com.starrocks.sql.ast.expression.InPredicate;
 import com.starrocks.sql.ast.expression.InformationFunction;
 import com.starrocks.sql.ast.expression.IntLiteral;
+import com.starrocks.sql.ast.expression.IntervalLiteral;
 import com.starrocks.sql.ast.expression.IsNullPredicate;
 import com.starrocks.sql.ast.expression.LambdaArgument;
 import com.starrocks.sql.ast.expression.LambdaFunctionExpr;
 import com.starrocks.sql.ast.expression.LargeIntLiteral;
 import com.starrocks.sql.ast.expression.LikePredicate;
+import com.starrocks.sql.ast.expression.MapExpr;
 import com.starrocks.sql.ast.expression.NamedArgument;
 import com.starrocks.sql.ast.expression.NullLiteral;
 import com.starrocks.sql.ast.expression.SlotRef;
 import com.starrocks.sql.ast.expression.StringLiteral;
 import com.starrocks.sql.ast.expression.SubfieldExpr;
 import com.starrocks.sql.ast.expression.Subquery;
+import com.starrocks.sql.ast.expression.TimestampArithmeticExpr;
 import com.starrocks.sql.ast.expression.TypeDef;
 import com.starrocks.sql.ast.expression.VarBinaryLiteral;
 import com.starrocks.sql.parser.NodePosition;
@@ -65,6 +70,7 @@ import com.starrocks.sql.parser.ParsingException;
 import com.starrocks.sql.parser.spark.gen.SparkSqlBaseLexer;
 import com.starrocks.sql.parser.spark.gen.SparkSqlBaseParser;
 import com.starrocks.sql.parser.spark.gen.SparkSqlBaseParserBaseVisitor;
+import com.starrocks.type.AnyMapType;
 import com.starrocks.type.ArrayType;
 import com.starrocks.type.BooleanType;
 import com.starrocks.type.DateType;
@@ -87,8 +93,12 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static com.starrocks.connector.parser.spark.SparkAstBuilder.unsupported;
 import static com.starrocks.connector.parser.spark.SparkParserUtils.pos;
@@ -97,9 +107,15 @@ import static com.starrocks.connector.parser.spark.SparkParserUtils.pos;
  * Builds expressions: column references, literals, operators, predicates, CASE, CAST with Spark type names,
  * function calls (including DISTINCT aggregates, FILTER and window functions), subquery expressions and EXISTS.
  *
- * <p>Every function call goes through {@link SparkFunctionCallTranslator}. Not covered yet (they throw
- * {@link SparkUnsupportedException}): INTERVAL literals, struct/first/last/any_value/overlay/percentile/timestampadd/
- * timestampdiff forms, TRY_CAST, named windows, LIKE ANY/ALL, LIKE ... ESCAPE, parameters markers.
+ * <p>Every function call goes through {@link SparkFunctionCallTranslator}, except the constructors array(...) and
+ * map(...), which are the StarRocks array and map expressions, and struct(...), which is named_struct with the Spark
+ * field names. Window references ({@code OVER w}) are resolved against the WINDOW clause of the enclosing query.
+ * INTERVAL literals exist only as an operand of {@code +} or {@code -} next to a date or timestamp, and become a
+ * chain of {@link TimestampArithmeticExpr}, one per unit. TRY_CAST is a CAST: StarRocks returns NULL when a cast
+ * fails.
+ *
+ * <p>Not covered yet (they throw {@link SparkUnsupportedException}): other uses of INTERVAL, first/last/any_value/
+ * overlay/percentile/timestampadd/timestampdiff forms, parameters markers.
  */
 public class SparkExprBuilder extends SparkSqlBaseParserBaseVisitor<ParseNode> {
     private static final Set<String> EXTRACT_FIELDS = Set.of("year", "quarter", "month", "week", "day", "dayofmonth",
@@ -199,21 +215,74 @@ public class SparkExprBuilder extends SparkSqlBaseParserBaseVisitor<ParseNode> {
     }
 
     private Expr buildLike(SparkSqlBaseParser.PredicateContext predicate, Expr value, boolean not, NodePosition pos) {
+        boolean ilike = predicate.kind.getType() == SparkSqlBaseLexer.ILIKE;
         if (predicate.quantifier != null) {
-            throw unsupported("LIKE ANY/SOME/ALL");
-        }
-        if (predicate.escapeChar != null) {
-            throw unsupported("LIKE ... ESCAPE");
+            // LIKE ANY (p1, p2) is (value LIKE p1 OR value LIKE p2), LIKE ALL is the conjunction
+            if (predicate.expression().isEmpty()) {
+                throw unsupported("LIKE ANY/SOME/ALL without patterns");
+            }
+            boolean all = predicate.quantifier.getType() == SparkSqlBaseLexer.ALL;
+            Expr combined = null;
+            for (SparkSqlBaseParser.ExpressionContext patternCtx : predicate.expression()) {
+                Expr like = like(combined == null ? value : value.clone(), expr(patternCtx), ilike, pos);
+                combined = combined == null ? like : new CompoundPredicate(
+                        all ? CompoundPredicate.Operator.AND : CompoundPredicate.Operator.OR, combined, like, pos);
+            }
+            return negateIf(not, combined, pos);
         }
         Expr pattern = expr(predicate.pattern);
-        if (predicate.kind.getType() == SparkSqlBaseLexer.ILIKE) {
+        if (predicate.escapeChar != null) {
+            pattern = escapePattern(pattern, SparkParserUtils.stringLit(predicate.escapeChar), predicate);
+        }
+        return negateIf(not, like(value, pattern, ilike, pos), pos);
+    }
+
+    private static Expr like(Expr value, Expr pattern, boolean ilike, NodePosition pos) {
+        if (ilike) {
             // ilike(a, b) is like(lower(a), lower(b))
-            Expr like = new FunctionCallExpr(FunctionSet.LIKE, Lists.newArrayList(
+            return new FunctionCallExpr(FunctionSet.LIKE, Lists.newArrayList(
                     new FunctionCallExpr(FunctionSet.LOWER, Lists.newArrayList(value)),
                     new FunctionCallExpr(FunctionSet.LOWER, Lists.newArrayList(pattern))), pos);
-            return negateIf(not, like, pos);
         }
-        return negateIf(not, new LikePredicate(LikePredicate.Operator.LIKE, value, pattern, pos), pos);
+        return new LikePredicate(LikePredicate.Operator.LIKE, value, pattern, pos);
+    }
+
+    /**
+     * LIKE ... ESCAPE 'c': StarRocks only knows the backslash as escape character, so a literal pattern is
+     * rewritten: "c%", "c_" and "cc" become "\%", "\_" and "c", and a literal backslash is doubled.
+     */
+    private static Expr escapePattern(Expr pattern, String escape, ParserRuleContext ctx) {
+        if (escape.length() != 1) {
+            throw new ParsingException("Invalid escape string: the escape string must have only one character",
+                    pos(ctx));
+        }
+        if (!(pattern instanceof StringLiteral)) {
+            throw unsupported("LIKE ... ESCAPE with a pattern that is not a string literal");
+        }
+        char escapeChar = escape.charAt(0);
+        if (escapeChar == '\\') {
+            return pattern;
+        }
+        String text = ((StringLiteral) pattern).getValue();
+        StringBuilder rewritten = new StringBuilder();
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == escapeChar && i + 1 < text.length()) {
+                char next = text.charAt(++i);
+                if (next == '%' || next == '_') {
+                    rewritten.append('\\').append(next);
+                } else if (next == '\\') {
+                    rewritten.append("\\\\");
+                } else {
+                    rewritten.append(next);
+                }
+            } else if (c == '\\') {
+                rewritten.append("\\\\");
+            } else {
+                rewritten.append(c);
+            }
+        }
+        return new StringLiteral(rewritten.toString(), pattern.getPos());
     }
 
     private static Expr negateIf(boolean negate, Expr expr, NodePosition pos) {
@@ -241,6 +310,9 @@ public class SparkExprBuilder extends SparkSqlBaseParserBaseVisitor<ParseNode> {
         Expr left = expr(ctx.left);
         Expr right = expr(ctx.right);
         NodePosition pos = pos(ctx);
+        if (left instanceof SparkInterval || right instanceof SparkInterval) {
+            return buildIntervalArithmetic(ctx, left, right, pos);
+        }
         ArithmeticExpr.Operator op;
         switch (ctx.operator.getType()) {
             case SparkSqlBaseLexer.ASTERISK:
@@ -308,6 +380,222 @@ public class SparkExprBuilder extends SparkSqlBaseParserBaseVisitor<ParseNode> {
                 break;
         }
         return new BinaryPredicate(op, expr(ctx.left), expr(ctx.right), pos(ctx));
+    }
+
+    // ---------------------------------------------- intervals --------------------------------------------------
+
+    /**
+     * One unit of an interval: the StarRocks time unit and the amount, which can be negative.
+     */
+    private static final class IntervalPart {
+        private final String unit;
+        private final long amount;
+
+        private IntervalPart(String unit, long amount) {
+            this.unit = unit;
+            this.amount = amount;
+        }
+    }
+
+    /**
+     * A Spark interval literal, like INTERVAL 1 DAY 2 HOURS. It is only built to be consumed by the
+     * {@code +}/{@code -} next to it, which turns it into a chain of {@link TimestampArithmeticExpr}.
+     */
+    private static final class SparkInterval extends IntervalLiteral {
+        private final List<IntervalPart> parts;
+
+        private SparkInterval(List<IntervalPart> parts, NodePosition pos) {
+            super(new IntLiteral(parts.get(0).amount), new UnitIdentifier(parts.get(0).unit), pos);
+            this.parts = parts;
+        }
+
+        @Override
+        public Expr clone() {
+            return new SparkInterval(parts, getPos());
+        }
+    }
+
+    // year-month and day-time units of "INTERVAL 'value' <from> TO <to>", in order, and the separator that follows
+    private static final List<String> YEAR_MONTH_UNITS = List.of("YEAR", "MONTH");
+    private static final List<String> DAY_TIME_UNITS = List.of("DAY", "HOUR", "MINUTE", "SECOND");
+    private static final List<String> DAY_TIME_SEPARATORS = List.of(" ", ":", ":");
+
+    @Override
+    public ParseNode visitIntervalLiteral(SparkSqlBaseParser.IntervalLiteralContext ctx) {
+        if (!isIntervalOperand(ctx)) {
+            throw unsupported("INTERVAL value outside of date +/- interval");
+        }
+        List<IntervalPart> parts = new ArrayList<>();
+        SparkSqlBaseParser.IntervalContext interval = ctx.interval();
+        if (interval.errorCapturingMultiUnitsInterval() != null) {
+            SparkSqlBaseParser.ErrorCapturingMultiUnitsIntervalContext multi =
+                    interval.errorCapturingMultiUnitsInterval();
+            if (multi.unitToUnitInterval() != null) {
+                throw unsupported(ctx);
+            }
+            SparkSqlBaseParser.MultiUnitsIntervalContext body = multi.body;
+            for (int i = 0; i < body.intervalValue().size(); i++) {
+                addIntervalPart(parts, unitName(body.unit.get(i)), intervalNumber(body.intervalValue(i)), ctx);
+            }
+        } else {
+            SparkSqlBaseParser.ErrorCapturingUnitToUnitIntervalContext single =
+                    interval.errorCapturingUnitToUnitInterval();
+            if (single.error1 != null || single.error2 != null) {
+                throw unsupported(ctx);
+            }
+            parts.addAll(unitToUnitParts(single.body, ctx));
+        }
+        return new SparkInterval(parts, pos(ctx));
+    }
+
+    /**
+     * An interval is supported as operand of a + or - only: constant -> primary -> value expression -> binary.
+     */
+    private static boolean isIntervalOperand(SparkSqlBaseParser.IntervalLiteralContext ctx) {
+        ParserRuleContext primary = ctx.getParent();
+        ParserRuleContext value = primary == null ? null : primary.getParent();
+        ParserRuleContext binary = value == null ? null : value.getParent();
+        if (!(primary instanceof SparkSqlBaseParser.ConstantDefaultContext)
+                || !(value instanceof SparkSqlBaseParser.ValueExpressionDefaultContext)
+                || !(binary instanceof SparkSqlBaseParser.ArithmeticBinaryContext)) {
+            return false;
+        }
+        int op = ((SparkSqlBaseParser.ArithmeticBinaryContext) binary).operator.getType();
+        return op == SparkSqlBaseLexer.PLUS || op == SparkSqlBaseLexer.MINUS;
+    }
+
+    private Expr buildIntervalArithmetic(SparkSqlBaseParser.ArithmeticBinaryContext ctx, Expr left, Expr right,
+                                         NodePosition pos) {
+        boolean add = ctx.operator.getType() == SparkSqlBaseLexer.PLUS;
+        if (left instanceof SparkInterval && right instanceof SparkInterval) {
+            throw unsupported("arithmetic between two INTERVAL values");
+        }
+        if (left instanceof SparkInterval && !add) {
+            throw unsupported("INTERVAL - value");
+        }
+        SparkInterval interval = (SparkInterval) (left instanceof SparkInterval ? left : right);
+        Expr result = left instanceof SparkInterval ? right : left;
+        ArithmeticExpr.Operator op = add ? ArithmeticExpr.Operator.ADD : ArithmeticExpr.Operator.SUBTRACT;
+        for (IntervalPart part : interval.parts) {
+            result = new TimestampArithmeticExpr(op, result, new IntLiteral(part.amount), part.unit, false, pos);
+        }
+        return result;
+    }
+
+    private static String unitName(ParserRuleContext unit) {
+        // MONTHS -> MONTH
+        String name = unit.getText().toUpperCase(Locale.ROOT);
+        return name.endsWith("S") ? name.substring(0, name.length() - 1) : name;
+    }
+
+    private static BigDecimal intervalNumber(SparkSqlBaseParser.IntervalValueContext value) {
+        String text;
+        if (value.INTEGER_VALUE() != null) {
+            text = value.INTEGER_VALUE().getText();
+        } else if (value.DECIMAL_VALUE() != null) {
+            text = value.DECIMAL_VALUE().getText();
+        } else {
+            text = SparkParserUtils.stringLit(value.stringLit()).trim();
+        }
+        try {
+            BigDecimal number = new BigDecimal(text);
+            return value.MINUS() != null ? number.negate() : number;
+        } catch (NumberFormatException e) {
+            throw unsupported("INTERVAL value " + text);
+        }
+    }
+
+    /**
+     * Adds an amount of a Spark interval unit, converted to the units StarRocks can add.
+     */
+    private static void addIntervalPart(List<IntervalPart> parts, String unit, BigDecimal amount,
+                                        ParserRuleContext ctx) {
+        try {
+            switch (unit) {
+                case "YEAR":
+                case "MONTH":
+                case "WEEK":
+                case "DAY":
+                case "HOUR":
+                case "MINUTE":
+                    parts.add(intervalPart(unit, amount.longValueExact(), ctx));
+                    return;
+                case "SECOND":
+                    if (amount.stripTrailingZeros().scale() <= 0) {
+                        parts.add(intervalPart(unit, amount.longValueExact(), ctx));
+                    } else {
+                        parts.add(intervalPart("MICROSECOND", amount.movePointRight(6).longValueExact(), ctx));
+                    }
+                    return;
+                case "MILLISECOND":
+                    parts.add(intervalPart("MICROSECOND", amount.movePointRight(3).longValueExact(), ctx));
+                    return;
+                case "MICROSECOND":
+                    parts.add(intervalPart("MICROSECOND", amount.longValueExact(), ctx));
+                    return;
+                case "NANOSECOND":
+                    parts.add(intervalPart("MICROSECOND", amount.movePointLeft(3).longValueExact(), ctx));
+                    return;
+                default:
+                    throw unsupported(ctx);
+            }
+        } catch (ArithmeticException e) {
+            throw unsupported("INTERVAL amount " + amount.toPlainString() + " " + unit);
+        }
+    }
+
+    private static IntervalPart intervalPart(String unit, long amount, ParserRuleContext ctx) {
+        if (amount > Integer.MAX_VALUE || amount < Integer.MIN_VALUE) {
+            throw unsupported("INTERVAL amount out of range: " + amount + " " + unit);
+        }
+        return new IntervalPart(unit, amount);
+    }
+
+    /**
+     * INTERVAL '1-2' YEAR TO MONTH, INTERVAL '1 02:03:04.5' DAY TO SECOND, INTERVAL '10:20' HOUR TO MINUTE, ...
+     */
+    private static List<IntervalPart> unitToUnitParts(SparkSqlBaseParser.UnitToUnitIntervalContext ctx,
+                                                      ParserRuleContext errorCtx) {
+        String from = unitName(ctx.from);
+        String to = unitName(ctx.to);
+        List<String> units = YEAR_MONTH_UNITS.contains(from) ? YEAR_MONTH_UNITS : DAY_TIME_UNITS;
+        int first = units.indexOf(from);
+        int last = units.indexOf(to);
+        if (first < 0 || last <= first) {
+            throw unsupported(errorCtx);
+        }
+        StringBuilder regex = new StringBuilder("^([+-])?");
+        for (int i = first; i <= last; i++) {
+            regex.append("(\\d+)");
+            if (i < last) {
+                regex.append(Pattern.quote(units == YEAR_MONTH_UNITS ? "-" : DAY_TIME_SEPARATORS.get(i)));
+            }
+        }
+        if (to.equals("SECOND")) {
+            regex.append("(?:\\.(\\d{1,9}))?");
+        }
+        regex.append("$");
+        String text = ctx.value.stringLit() == null ? null : SparkParserUtils.stringLit(ctx.value.stringLit()).trim();
+        Matcher matcher = text == null ? null : Pattern.compile(regex.toString()).matcher(text);
+        if (matcher == null || !matcher.matches()) {
+            throw unsupported("INTERVAL value " + text + " for " + from + " TO " + to);
+        }
+        boolean negative = "-".equals(matcher.group(1)) != (ctx.value.MINUS() != null);
+        List<IntervalPart> parts = new ArrayList<>();
+        for (int i = first; i <= last; i++) {
+            long amount = Long.parseLong(matcher.group(i - first + 2));
+            addIntervalPart(parts, units.get(i), BigDecimal.valueOf(negative ? -amount : amount), errorCtx);
+        }
+        int fractionGroup = last - first + 3;
+        if (to.equals("SECOND") && matcher.group(fractionGroup) != null) {
+            String fraction = (matcher.group(fractionGroup) + "000000000").substring(0, 9);
+            long nanos = Long.parseLong(fraction);
+            if (nanos % 1000 != 0) {
+                throw unsupported("INTERVAL with nanoseconds");
+            }
+            parts.add(intervalPart("MICROSECOND", negative ? -nanos / 1000 : nanos / 1000, errorCtx));
+        }
+        return parts;
     }
 
     // -------------------------------------- primary expressions ------------------------------------------------
@@ -393,10 +681,43 @@ public class SparkExprBuilder extends SparkSqlBaseParserBaseVisitor<ParseNode> {
 
     @Override
     public ParseNode visitCast(SparkSqlBaseParser.CastContext ctx) {
-        if (ctx.name.getType() == SparkSqlBaseLexer.TRY_CAST) {
-            throw unsupported("TRY_CAST");
-        }
+        // TRY_CAST(x AS t) is CAST(x AS t): a failing cast gives NULL in StarRocks (the default, non strict mode)
         return new CastExpr(new TypeDef(toType(ctx.dataType())), expr(ctx.expression()), pos(ctx));
+    }
+
+    /**
+     * struct(a, b AS c, 1 + 2) is named_struct('a', a, 'c', b, 'col3', 1 + 2): Spark names the fields after the
+     * alias or the column, or colN (1-based position) for other expressions.
+     */
+    @Override
+    public ParseNode visitStruct(SparkSqlBaseParser.StructContext ctx) {
+        List<Expr> args = new ArrayList<>();
+        int position = 0;
+        for (SparkSqlBaseParser.NamedExpressionContext named : ctx.argument) {
+            position++;
+            if (named.identifierList() != null) {
+                throw unsupported("multiple aliases in struct()");
+            }
+            Expr value = expr(named.expression());
+            String name;
+            if (named.name != null) {
+                name = SparkParserUtils.identifier(named.name);
+            } else if (value instanceof SlotRef) {
+                List<String> parts = ((SlotRef) value).getQualifiedName().getParts();
+                name = parts.get(parts.size() - 1);
+            } else if (value instanceof SubfieldExpr) {
+                List<String> fields = ((SubfieldExpr) value).getFieldNames();
+                name = fields.get(fields.size() - 1);
+            } else {
+                name = "col" + position;
+            }
+            args.add(new StringLiteral(name));
+            args.add(value);
+        }
+        if (args.isEmpty()) {
+            throw unsupported("struct() without fields");
+        }
+        return new FunctionCallExpr(FunctionSet.NAMED_STRUCT, args, pos(ctx));
     }
 
     @Override
@@ -482,6 +803,19 @@ public class SparkExprBuilder extends SparkSqlBaseParserBaseVisitor<ParseNode> {
             }
         }
 
+        if (ctx.windowSpec() == null && ctx.where == null && !distinct && !star) {
+            if (name.equals("array")) {
+                return new ArrayExpr(null, args, pos);
+            }
+            if (name.equals("map")) {
+                if (args.size() % 2 != 0) {
+                    throw new ParsingException("map expects an even number of arguments (key/value pairs), got "
+                            + args.size(), pos);
+                }
+                return new MapExpr(AnyMapType.ANY_MAP, args, pos);
+            }
+        }
+
         if (ctx.windowSpec() == null && (name.equals("grouping") || name.equals("grouping_id"))) {
             return new GroupingFunctionCallExpr(name, args, pos);
         }
@@ -539,10 +873,7 @@ public class SparkExprBuilder extends SparkSqlBaseParserBaseVisitor<ParseNode> {
     }
 
     private AnalyticExpr buildOver(FunctionCallExpr call, SparkSqlBaseParser.WindowSpecContext spec, NodePosition pos) {
-        if (!(spec instanceof SparkSqlBaseParser.WindowDefContext)) {
-            throw unsupported("named window reference");
-        }
-        SparkSqlBaseParser.WindowDefContext def = (SparkSqlBaseParser.WindowDefContext) spec;
+        SparkSqlBaseParser.WindowDefContext def = resolveWindow(spec, new HashSet<>());
         if (def.CLUSTER() != null) {
             throw unsupported("window CLUSTER BY");
         }
@@ -554,6 +885,43 @@ public class SparkExprBuilder extends SparkSqlBaseParserBaseVisitor<ParseNode> {
         }
         AnalyticWindow frame = def.windowFrame() == null ? null : buildFrame(def.windowFrame());
         return new AnalyticExpr(call, partitions, orderBy, frame, null, pos, null, List.of());
+    }
+
+    /**
+     * The definition of a window specification: itself, or for a reference the definition in the WINDOW clause
+     * of the innermost enclosing query that declares that name. StarRocks has no named windows, so the definition
+     * is inlined (and built again) for every use.
+     */
+    private SparkSqlBaseParser.WindowDefContext resolveWindow(SparkSqlBaseParser.WindowSpecContext spec,
+                                                              Set<String> visiting) {
+        if (spec instanceof SparkSqlBaseParser.WindowDefContext) {
+            return (SparkSqlBaseParser.WindowDefContext) spec;
+        }
+        SparkSqlBaseParser.WindowRefContext ref = (SparkSqlBaseParser.WindowRefContext) spec;
+        String name = SparkParserUtils.identifier(ref.name);
+        if (!visiting.add(name.toLowerCase(Locale.ROOT))) {
+            throw new ParsingException("Window " + name + " is defined in terms of itself", pos(ref));
+        }
+        for (ParserRuleContext scope = ref.getParent(); scope != null; scope = scope.getParent()) {
+            SparkSqlBaseParser.WindowClauseContext clause = null;
+            if (scope instanceof SparkSqlBaseParser.RegularQuerySpecificationContext) {
+                clause = ((SparkSqlBaseParser.RegularQuerySpecificationContext) scope).windowClause();
+            } else if (scope instanceof SparkSqlBaseParser.FromStatementBodyContext) {
+                clause = ((SparkSqlBaseParser.FromStatementBodyContext) scope).windowClause();
+            } else if (scope instanceof SparkSqlBaseParser.QueryContext) {
+                clause = ((SparkSqlBaseParser.QueryContext) scope).queryOrganization().windowClause();
+            }
+            if (clause == null) {
+                continue;
+            }
+            for (SparkSqlBaseParser.NamedWindowContext named : clause.namedWindow()) {
+                if (SparkParserUtils.identifier(named.name).equalsIgnoreCase(name)) {
+                    return resolveWindow(named.windowSpec(), visiting);
+                }
+            }
+        }
+        throw new ParsingException("Window specification " + name + " is not defined in the WINDOW clause",
+                pos(ref));
     }
 
     private AnalyticWindow buildFrame(SparkSqlBaseParser.WindowFrameContext ctx) {

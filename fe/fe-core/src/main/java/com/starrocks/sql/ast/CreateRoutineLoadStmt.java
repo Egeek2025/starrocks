@@ -482,7 +482,7 @@ public class CreateRoutineLoadStmt extends DdlStmt {
 
         // parse the origin stmt to get routine load desc
         try {
-            List<StatementBase> stmts = com.starrocks.sql.parser.SqlParser.parse(
+            List<StatementBase> stmts = com.starrocks.sql.parser.SqlParser.parseWithStarRocksDialect(
                     origStmt.originStmt, buildSessionVariables(sessionVariables));
             StatementBase stmt = stmts.get(origStmt.idx);
             if (stmt instanceof CreateRoutineLoadStmt) {

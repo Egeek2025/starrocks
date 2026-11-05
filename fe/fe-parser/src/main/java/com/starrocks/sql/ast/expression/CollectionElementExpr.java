@@ -27,6 +27,11 @@ public class CollectionElementExpr extends Expr {
     // (a map is left alone) and clears the flag, so analyzing the same node twice does not shift twice.
     private boolean zeroBasedSubscript = false;
 
+    // For Spark element_at(array, index): the index is 1-based and a negative index counts from the end of the array,
+    // index 0 is an error. The analyzer rewrites the subscript when the base is an array (a map is left alone) and
+    // clears the flag, so analyzing the same node twice does not rewrite twice.
+    private boolean sparkElementAt = false;
+
     public CollectionElementExpr(Expr expr, Expr subscript, boolean checkIsOutOfBounds) {
         super(NodePosition.ZERO);
         this.children.add(expr);
@@ -50,6 +55,7 @@ public class CollectionElementExpr extends Expr {
         super(other);
         this.checkIsOutOfBounds = other.checkIsOutOfBounds;
         this.zeroBasedSubscript = other.zeroBasedSubscript;
+        this.sparkElementAt = other.sparkElementAt;
     }
 
 
@@ -82,5 +88,13 @@ public class CollectionElementExpr extends Expr {
 
     public void setZeroBasedSubscript(boolean zeroBasedSubscript) {
         this.zeroBasedSubscript = zeroBasedSubscript;
+    }
+
+    public boolean isSparkElementAt() {
+        return sparkElementAt;
+    }
+
+    public void setSparkElementAt(boolean sparkElementAt) {
+        this.sparkElementAt = sparkElementAt;
     }
 }

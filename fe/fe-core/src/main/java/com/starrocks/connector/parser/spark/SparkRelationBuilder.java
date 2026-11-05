@@ -14,6 +14,7 @@
 
 package com.starrocks.connector.parser.spark;
 
+import com.starrocks.catalog.FunctionSet;
 import com.starrocks.catalog.TableName;
 import com.starrocks.sql.analyzer.RelationId;
 import com.starrocks.sql.ast.CTERelation;
@@ -24,6 +25,10 @@ import com.starrocks.sql.ast.JoinOperator;
 import com.starrocks.sql.ast.JoinRelation;
 import com.starrocks.sql.ast.OrderByElement;
 import com.starrocks.sql.ast.ParseNode;
+import com.starrocks.sql.ast.PivotAggregation;
+import com.starrocks.sql.ast.PivotRelation;
+import com.starrocks.sql.ast.PivotValue;
+import com.starrocks.sql.ast.QualifiedName;
 import com.starrocks.sql.ast.QueryRelation;
 import com.starrocks.sql.ast.QueryStatement;
 import com.starrocks.sql.ast.Relation;
@@ -32,12 +37,21 @@ import com.starrocks.sql.ast.SelectListItem;
 import com.starrocks.sql.ast.SelectRelation;
 import com.starrocks.sql.ast.SetQualifier;
 import com.starrocks.sql.ast.SubqueryRelation;
+import com.starrocks.sql.ast.TableFunctionRelation;
 import com.starrocks.sql.ast.TableRelation;
 import com.starrocks.sql.ast.UnionRelation;
 import com.starrocks.sql.ast.ValuesRelation;
+import com.starrocks.sql.ast.expression.ArrayExpr;
+import com.starrocks.sql.ast.expression.BoolLiteral;
 import com.starrocks.sql.ast.expression.Expr;
+import com.starrocks.sql.ast.expression.FunctionCallExpr;
+import com.starrocks.sql.ast.expression.FunctionParams;
+import com.starrocks.sql.ast.expression.IntLiteral;
 import com.starrocks.sql.ast.expression.LimitElement;
 import com.starrocks.sql.ast.expression.LiteralExpr;
+import com.starrocks.sql.ast.expression.NullLiteral;
+import com.starrocks.sql.ast.expression.SlotRef;
+import com.starrocks.sql.ast.expression.StringLiteral;
 import com.starrocks.sql.parser.NodePosition;
 import com.starrocks.sql.parser.ParsingException;
 import com.starrocks.sql.parser.spark.gen.SparkSqlBaseParser;
@@ -49,7 +63,10 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 import static com.starrocks.connector.parser.spark.SparkAstBuilder.unsupported;
 import static com.starrocks.connector.parser.spark.SparkParserUtils.pos;
@@ -57,11 +74,23 @@ import static com.starrocks.connector.parser.spark.SparkParserUtils.pos;
 /**
  * Builds queries: CTE, set operations, SELECT, FROM, joins, subqueries, GROUP BY, ORDER BY and LIMIT.
  *
- * <p>Phase A covers: single tables and aliases, subqueries in FROM, VALUES, INNER/LEFT/RIGHT/FULL/CROSS/LEFT SEMI/
- * LEFT ANTI joins with ON or USING, UNION/INTERSECT/EXCEPT [ALL], GROUP BY including ROLLUP/CUBE/GROUPING SETS.
- * Not covered yet (they throw {@link SparkUnsupportedException}): LATERAL VIEW, named WINDOW clauses, TRANSFORM,
- * PIVOT, TABLESAMPLE, time travel, table valued functions, NATURAL joins, CLUSTER/DISTRIBUTE/SORT BY, query hints
- * (hints are ignored).
+ * <p>Supported: single tables and aliases (with column alias lists), subqueries in FROM, VALUES,
+ * INNER/LEFT/RIGHT/FULL/CROSS/LEFT SEMI/LEFT ANTI joins with ON or USING, UNION/INTERSECT/EXCEPT [ALL],
+ * GROUP BY including ROLLUP/CUBE/GROUPING SETS, and these Spark specific constructs:
+ * <ul>
+ *   <li>LATERAL VIEW [OUTER] explode/posexplode/explode_outer/posexplode_outer/json_tuple/stack, chained, with
+ *   column aliases; and a generator in the SELECT list (at most one), which becomes a lateral view. All of them are
+ *   a lateral join with {@code unnest}; explode of a map is expanded by the analyzer, see {@link SparkGenerators}.</li>
+ *   <li>Named WINDOW clauses are resolved where the window is used, see {@link SparkExprBuilder}.</li>
+ *   <li>SORT BY / CLUSTER BY of the outermost query become ORDER BY, DISTRIBUTE BY is ignored, and all three are
+ *   dropped in subqueries.</li>
+ *   <li>PIVOT, as the StarRocks pivot clause. TABLESAMPLE (n ROWS) as a LIMIT.</li>
+ *   <li>Join hints BROADCAST/BROADCASTJOIN/MAPJOIN and SHUFFLE_HASH on the right table of a join; other hints are
+ *   performance hints and ignored.</li>
+ * </ul>
+ * Not covered (they throw {@link SparkUnsupportedException}): inline, TRANSFORM, UNPIVOT, TABLESAMPLE by PERCENT,
+ * BUCKET or bytes, time travel, table valued functions, NATURAL joins, LATERAL subqueries, combining ORDER BY with
+ * SORT BY or CLUSTER BY.
  */
 public class SparkRelationBuilder extends SparkSqlBaseParserBaseVisitor<ParseNode> {
     private final SparkAstBuilder root;
@@ -69,6 +98,12 @@ public class SparkRelationBuilder extends SparkSqlBaseParserBaseVisitor<ParseNod
     // CTE names case-insensitively, the StarRocks analyzer case-sensitively.
     private final Deque<Map<String, String>> cteScopes = new ArrayDeque<>();
     private int generatedAliasId = 0;
+    // nesting depth of the query being built: only the outermost query keeps its SORT BY / CLUSTER BY
+    private int queryDepth = 0;
+
+    private static final Set<String> GENERATORS = Set.of("explode", "explode_outer", "posexplode",
+            "posexplode_outer", "json_tuple", "stack");
+    private static final Pattern JSON_KEY = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
 
     public SparkRelationBuilder(SparkAstBuilder root) {
         this.root = root;
@@ -80,6 +115,8 @@ public class SparkRelationBuilder extends SparkSqlBaseParserBaseVisitor<ParseNod
     public ParseNode visitQuery(SparkSqlBaseParser.QueryContext ctx) {
         Map<String, String> scope = new HashMap<>();
         cteScopes.push(scope);
+        boolean outermost = queryDepth == 0;
+        queryDepth++;
         try {
             List<CTERelation> ctes = new ArrayList<>();
             if (ctx.ctes() != null) {
@@ -90,18 +127,8 @@ public class SparkRelationBuilder extends SparkSqlBaseParserBaseVisitor<ParseNod
 
             QueryRelation relation = root.visit(ctx.queryTerm(), QueryRelation.class);
             SparkSqlBaseParser.QueryOrganizationContext org = ctx.queryOrganization();
-            List<OrderByElement> orderBy = new ArrayList<>();
-            if (!org.order.isEmpty()) {
-                for (SparkSqlBaseParser.SortItemContext item : org.order) {
-                    orderBy.add(root.visit(item, OrderByElement.class));
-                }
-            }
-            if (!org.clusterBy.isEmpty() || !org.distributeBy.isEmpty() || !org.sort.isEmpty()) {
-                throw unsupported("CLUSTER BY / DISTRIBUTE BY / SORT BY");
-            }
-            if (org.windowClause() != null) {
-                throw unsupported("named WINDOW clause");
-            }
+            List<OrderByElement> orderBy = buildOrderBy(org, outermost);
+            // a named WINDOW clause needs no handling here: a window reference looks its definition up
             LimitElement limit = buildLimit(org);
 
             boolean hasOrganization = !orderBy.isEmpty() || limit != null;
@@ -115,8 +142,40 @@ public class SparkRelationBuilder extends SparkSqlBaseParserBaseVisitor<ParseNod
             ctes.forEach(relation::addCTERelation);
             return relation;
         } finally {
+            queryDepth--;
             cteScopes.pop();
         }
+    }
+
+    /**
+     * ORDER BY, or in the outermost query the ordering that SORT BY / CLUSTER BY ask for. Those sort within each
+     * partition, a total order is a valid result of it; DISTRIBUTE BY only affects the partitioning and is ignored.
+     * In a subquery the order is not observable and dropped.
+     */
+    private List<OrderByElement> buildOrderBy(SparkSqlBaseParser.QueryOrganizationContext org, boolean outermost) {
+        boolean hasLocalOrder = !org.clusterBy.isEmpty() || !org.sort.isEmpty();
+        if (!org.order.isEmpty() && hasLocalOrder) {
+            throw unsupported("combination of ORDER BY with SORT BY / CLUSTER BY");
+        }
+        if (!org.clusterBy.isEmpty() && (!org.sort.isEmpty() || !org.distributeBy.isEmpty())) {
+            throw unsupported("combination of CLUSTER BY with SORT BY / DISTRIBUTE BY");
+        }
+        List<OrderByElement> orderBy = new ArrayList<>();
+        if (!org.order.isEmpty()) {
+            for (SparkSqlBaseParser.SortItemContext item : org.order) {
+                orderBy.add(root.visit(item, OrderByElement.class));
+            }
+        } else if (outermost && !org.sort.isEmpty()) {
+            for (SparkSqlBaseParser.SortItemContext item : org.sort) {
+                orderBy.add(root.visit(item, OrderByElement.class));
+            }
+        } else if (outermost && !org.clusterBy.isEmpty()) {
+            for (SparkSqlBaseParser.ExpressionContext item : org.clusterBy) {
+                // ascending, nulls first: the Spark default
+                orderBy.add(new OrderByElement(root.visit(item, Expr.class), true, true, pos(item)));
+            }
+        }
+        return orderBy;
     }
 
     private CTERelation buildCte(SparkSqlBaseParser.NamedQueryContext ctx, Map<String, String> scope) {
@@ -161,7 +220,11 @@ public class SparkRelationBuilder extends SparkSqlBaseParserBaseVisitor<ParseNod
     }
 
     private String nextGeneratedAlias() {
-        return "__spark_subquery_" + generatedAliasId++;
+        return nextGeneratedAlias("__spark_subquery_");
+    }
+
+    private String nextGeneratedAlias(String prefix) {
+        return prefix + generatedAliasId++;
     }
 
     @Override
@@ -210,27 +273,304 @@ public class SparkRelationBuilder extends SparkSqlBaseParserBaseVisitor<ParseNod
 
     @Override
     public ParseNode visitRegularQuerySpecification(SparkSqlBaseParser.RegularQuerySpecificationContext ctx) {
-        if (!ctx.lateralView().isEmpty()) {
-            throw unsupported("LATERAL VIEW");
-        }
-        if (ctx.windowClause() != null) {
-            throw unsupported("named WINDOW clause");
-        }
         SparkSqlBaseParser.SelectClauseContext select = ctx.selectClause();
-        // query hints (/*+ ... */) only influence performance and are ignored
         boolean distinct = select.setQuantifier() != null && select.setQuantifier().DISTINCT() != null;
-        List<SelectListItem> items = new ArrayList<>();
-        for (SparkSqlBaseParser.NamedExpressionContext named : select.namedExpressionSeq().namedExpression()) {
-            items.add(buildSelectItem(named));
+
+        Relation from;
+        if (ctx.fromClause() == null) {
+            if (!ctx.lateralView().isEmpty()) {
+                throw unsupported("LATERAL VIEW without FROM");
+            }
+            from = ValuesRelation.newDualRelation();
+        } else {
+            from = buildFrom(ctx.fromClause());
+        }
+        for (SparkSqlBaseParser.LateralViewContext lateralView : ctx.lateralView()) {
+            from = buildLateralView(from, lateralView);
         }
 
-        Relation from = ctx.fromClause() == null ? ValuesRelation.newDualRelation() : buildFrom(ctx.fromClause());
+        List<SelectListItem> items = new ArrayList<>();
+        boolean hasGenerator = false;
+        boolean hasStar = false;
+        for (SparkSqlBaseParser.NamedExpressionContext named : select.namedExpressionSeq().namedExpression()) {
+            SparkSqlBaseParser.FunctionCallContext generator = asGenerator(named);
+            if (generator == null) {
+                hasStar |= isUnqualifiedStar(named);
+                items.add(buildSelectItem(named));
+                continue;
+            }
+            if (hasGenerator) {
+                throw unsupported("more than one generator in the SELECT list");
+            }
+            hasGenerator = true;
+            // the generator becomes a lateral view, and its columns are selected where the generator was
+            String alias = nextGeneratedAlias("__spark_generator_");
+            from = buildSelectGenerator(from, generator, named, alias);
+            items.add(new SelectListItem(new TableName(null, alias), pos(named), new ArrayList<>()));
+        }
+        if (hasGenerator && hasStar) {
+            throw unsupported("* together with a generator in the SELECT list");
+        }
+        applyJoinHints(from, select.hints);
+
         Expr where = ctx.whereClause() == null ? null
                 : root.visit(ctx.whereClause().booleanExpression(), Expr.class);
         GroupByClause groupBy = ctx.aggregationClause() == null ? null : buildGroupBy(ctx.aggregationClause());
         Expr having = ctx.havingClause() == null ? null
                 : root.visit(ctx.havingClause().booleanExpression(), Expr.class);
         return new SelectRelation(new SelectList(items, distinct), from, where, groupBy, having, pos(ctx));
+    }
+
+    private static boolean isUnqualifiedStar(SparkSqlBaseParser.NamedExpressionContext ctx) {
+        ParseTree inner = SparkParserUtils.unwrapSingleChild(ctx.expression());
+        return inner instanceof SparkSqlBaseParser.StarContext
+                && ((SparkSqlBaseParser.StarContext) inner).qualifiedName() == null;
+    }
+
+    // ------------------------------------------- generators ----------------------------------------------------
+
+    /**
+     * A generator is built for LATERAL VIEW or for a generator in the SELECT list: a table function plus the
+     * information whether rows without output are kept (outer).
+     */
+    private static final class Generator {
+        private final TableFunctionRelation function;
+        private final boolean outer;
+
+        private Generator(TableFunctionRelation function, boolean outer) {
+            this.function = function;
+            this.outer = outer;
+        }
+    }
+
+    private Relation buildLateralView(Relation left, SparkSqlBaseParser.LateralViewContext ctx) {
+        List<Expr> args = new ArrayList<>();
+        for (SparkSqlBaseParser.ExpressionContext arg : ctx.expression()) {
+            args.add(root.visit(arg, Expr.class));
+        }
+        List<String> columns = null;
+        if (!ctx.colName.isEmpty()) {
+            columns = new ArrayList<>();
+            for (SparkSqlBaseParser.IdentifierContext column : ctx.colName) {
+                columns.add(SparkParserUtils.identifier(column));
+            }
+        }
+        List<String> nameParts = new ArrayList<>();
+        for (SparkSqlBaseParser.IdentifierContext part : ctx.qualifiedName().identifier()) {
+            nameParts.add(SparkParserUtils.identifier(part));
+        }
+        String name = String.join(".", nameParts).toLowerCase(Locale.ROOT);
+        Generator generator = buildGenerator(name, args, columns, pos(ctx));
+        generator.function.setAlias(new TableName(null, SparkParserUtils.identifier(ctx.tblName)));
+        return lateralJoin(left, generator, ctx.OUTER() != null, pos(ctx));
+    }
+
+    /**
+     * A generator in the SELECT list: {@code SELECT explode(a) AS x, b FROM t} is the same as
+     * {@code SELECT x, b FROM t LATERAL VIEW explode(a) alias AS x}.
+     */
+    private Relation buildSelectGenerator(Relation left, SparkSqlBaseParser.FunctionCallContext call,
+                                          SparkSqlBaseParser.NamedExpressionContext named, String alias) {
+        List<Expr> args = new ArrayList<>();
+        for (SparkSqlBaseParser.FunctionArgumentContext arg : call.argument) {
+            if (arg.expression() == null) {
+                throw unsupported("named argument of a generator");
+            }
+            args.add(root.visit(arg.expression(), Expr.class));
+        }
+        List<String> columns = null;
+        if (named.name != null) {
+            columns = List.of(SparkParserUtils.identifier(named.name));
+        } else if (named.identifierList() != null) {
+            columns = SparkParserUtils.identifierSeq(named.identifierList());
+        }
+        Generator generator = buildGenerator(generatorName(call), args, columns, pos(call));
+        generator.function.setAlias(new TableName(null, alias));
+        return lateralJoin(left, generator, false, pos(named));
+    }
+
+    private static Relation lateralJoin(Relation left, Generator generator, boolean outerKeyword, NodePosition pos) {
+        if (generator.outer || outerKeyword) {
+            // supported by the analyzer for unnest only, and only as ON true
+            return new JoinRelation(JoinOperator.LEFT_OUTER_JOIN, left, generator.function, new BoolLiteral(true),
+                    true, pos);
+        }
+        return new JoinRelation(JoinOperator.CROSS_JOIN, left, generator.function, null, true, pos);
+    }
+
+    private static String generatorName(SparkSqlBaseParser.FunctionCallContext ctx) {
+        SparkSqlBaseParser.FunctionNameContext name = ctx.functionName();
+        if (name.qualifiedName() == null || name.qualifiedName().identifier().size() != 1) {
+            return null;
+        }
+        return SparkParserUtils.identifier(name.qualifiedName().identifier(0)).toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * The function call of a select item when it is a generator, otherwise null.
+     */
+    private static SparkSqlBaseParser.FunctionCallContext asGenerator(SparkSqlBaseParser.NamedExpressionContext ctx) {
+        ParseTree inner = SparkParserUtils.unwrapSingleChild(ctx.expression());
+        if (!(inner instanceof SparkSqlBaseParser.FunctionCallContext)) {
+            return null;
+        }
+        SparkSqlBaseParser.FunctionCallContext call = (SparkSqlBaseParser.FunctionCallContext) inner;
+        String name = generatorName(call);
+        if (name == null || !GENERATORS.contains(name) || call.windowSpec() != null || call.where != null) {
+            return null;
+        }
+        return call;
+    }
+
+    /**
+     * Translates a Spark generator to a table function over {@code unnest}. Everything but explode and posexplode
+     * is built from arrays of the values, so that unnest of several arrays yields them as columns:
+     * <ul>
+     *   <li>json_tuple(js, 'a', 'b'): unnest([get_json_string(js, '$.a')], [get_json_string(js, '$.b')])</li>
+     *   <li>stack(n, v1, ..., vk): unnest([v1, v3, ...], [v2, v4, ...]) with one array per output column, padded
+     *   with NULL</li>
+     * </ul>
+     */
+    private Generator buildGenerator(String name, List<Expr> args, List<String> columnNames, NodePosition pos) {
+        if (name == null || !GENERATORS.contains(name)) {
+            throw unsupported("generator " + name);
+        }
+        TableFunctionRelation function;
+        boolean outer = name.endsWith("_outer");
+        switch (name) {
+            case "explode":
+            case "explode_outer":
+            case "posexplode":
+            case "posexplode_outer":
+                if (args.size() != 1) {
+                    throw new ParsingException(name + " expects exactly one argument", pos);
+                }
+                function = new TableFunctionRelation(FunctionSet.UNNEST, new FunctionParams(false, args), pos);
+                function.setSparkGenerator(name.startsWith("pos") ? TableFunctionRelation.SparkGenerator.POSEXPLODE
+                        : TableFunctionRelation.SparkGenerator.EXPLODE);
+                function.setColumnOutputNames(columnNames);
+                break;
+            case "json_tuple":
+                function = buildJsonTuple(args, columnNames, pos);
+                break;
+            default:
+                function = buildStack(args, columnNames, pos);
+                break;
+        }
+        return new Generator(function, outer);
+    }
+
+    private TableFunctionRelation buildJsonTuple(List<Expr> args, List<String> columnNames, NodePosition pos) {
+        if (args.size() < 2) {
+            throw new ParsingException("json_tuple requires at least two arguments", pos);
+        }
+        List<Expr> arrays = new ArrayList<>();
+        List<String> defaultNames = new ArrayList<>();
+        for (int i = 1; i < args.size(); i++) {
+            Expr key = args.get(i);
+            if (!(key instanceof StringLiteral) || !JSON_KEY.matcher(((StringLiteral) key).getValue()).matches()) {
+                throw unsupported("json_tuple with a field name that is not a simple string literal");
+            }
+            Expr json = i == 1 ? args.get(0) : args.get(0).clone();
+            Expr value = new FunctionCallExpr("get_json_string", new ArrayList<>(List.of(json,
+                    new StringLiteral("$." + ((StringLiteral) key).getValue()))), pos);
+            arrays.add(new ArrayExpr(null, new ArrayList<>(List.of(value)), pos));
+            defaultNames.add("c" + (i - 1));
+        }
+        TableFunctionRelation function = new TableFunctionRelation(FunctionSet.UNNEST,
+                new FunctionParams(false, arrays), pos);
+        function.setColumnOutputNames(columnNames != null ? columnNames : defaultNames);
+        return function;
+    }
+
+    private TableFunctionRelation buildStack(List<Expr> args, List<String> columnNames, NodePosition pos) {
+        if (args.size() < 2 || !(args.get(0) instanceof IntLiteral) || ((IntLiteral) args.get(0)).getValue() < 1) {
+            throw unsupported("stack without a constant positive row count and at least one value");
+        }
+        int rows = (int) ((IntLiteral) args.get(0)).getValue();
+        int values = args.size() - 1;
+        int columns = (values + rows - 1) / rows;
+        List<Expr> arrays = new ArrayList<>();
+        List<String> defaultNames = new ArrayList<>();
+        for (int column = 0; column < columns; column++) {
+            List<Expr> items = new ArrayList<>();
+            for (int row = 0; row < rows; row++) {
+                int index = row * columns + column;
+                items.add(index < values ? args.get(index + 1) : new NullLiteral(pos));
+            }
+            arrays.add(new ArrayExpr(null, items, pos));
+            defaultNames.add("col" + column);
+        }
+        TableFunctionRelation function = new TableFunctionRelation(FunctionSet.UNNEST,
+                new FunctionParams(false, arrays), pos);
+        function.setColumnOutputNames(columnNames != null ? columnNames : defaultNames);
+        return function;
+    }
+
+    // ----------------------------------------------- hints -----------------------------------------------------
+
+    /**
+     * BROADCAST / BROADCASTJOIN / MAPJOIN (table) and SHUFFLE_HASH (table) become the join hint of the join that
+     * has the table as its right input. Hints change the plan, never the result, so everything that cannot be
+     * expressed (the table is the left input, the join type does not allow it, MERGE, REPARTITION, COALESCE, ...)
+     * is ignored.
+     */
+    private void applyJoinHints(Relation from, List<SparkSqlBaseParser.HintContext> hints) {
+        for (SparkSqlBaseParser.HintContext hint : hints) {
+            for (SparkSqlBaseParser.HintStatementContext statement : hint.hintStatements) {
+                String name = SparkParserUtils.identifier(statement.hintName).toUpperCase(Locale.ROOT);
+                String joinHint;
+                switch (name) {
+                    case "BROADCAST":
+                    case "BROADCASTJOIN":
+                    case "MAPJOIN":
+                        joinHint = "BROADCAST";
+                        break;
+                    case "SHUFFLE_HASH":
+                        joinHint = "SHUFFLE";
+                        break;
+                    default:
+                        continue;
+                }
+                for (SparkSqlBaseParser.PrimaryExpressionContext parameter : statement.parameters) {
+                    String text = parameter.getText().toLowerCase(Locale.ROOT);
+                    applyJoinHint(from, text.substring(text.lastIndexOf('.') + 1).replace("`", ""), joinHint);
+                }
+            }
+        }
+    }
+
+    private void applyJoinHint(Relation relation, String tableName, String joinHint) {
+        if (!(relation instanceof JoinRelation)) {
+            return;
+        }
+        JoinRelation join = (JoinRelation) relation;
+        if (join.getJoinHint().isEmpty() && tableName.equals(resolveName(join.getRight()))
+                && joinAllowsHint(join, joinHint)) {
+            join.setJoinHint(joinHint);
+        }
+        applyJoinHint(join.getLeft(), tableName, joinHint);
+    }
+
+    private static String resolveName(Relation relation) {
+        if (relation instanceof TableRelation) {
+            TableRelation table = (TableRelation) relation;
+            return (table.getAlias() != null ? table.getAlias().getTbl() : table.getName().getTbl())
+                    .toLowerCase(Locale.ROOT);
+        }
+        if (relation instanceof SubqueryRelation && relation.getAlias() != null) {
+            return relation.getAlias().getTbl().toLowerCase(Locale.ROOT);
+        }
+        return null;
+    }
+
+    private static boolean joinAllowsHint(JoinRelation join, String joinHint) {
+        JoinOperator op = join.getJoinOp();
+        if (joinHint.equals("BROADCAST")) {
+            return op != JoinOperator.RIGHT_OUTER_JOIN && op != JoinOperator.FULL_OUTER_JOIN
+                    && op != JoinOperator.RIGHT_SEMI_JOIN && op != JoinOperator.RIGHT_ANTI_JOIN;
+        }
+        return op != JoinOperator.CROSS_JOIN && (join.getOnPredicate() != null || join.getUsingColNames() != null);
     }
 
     private SelectListItem buildSelectItem(SparkSqlBaseParser.NamedExpressionContext ctx) {
@@ -344,18 +684,75 @@ public class SparkRelationBuilder extends SparkSqlBaseParserBaseVisitor<ParseNod
     // ----------------------------------------------- from ------------------------------------------------------
 
     private Relation buildFrom(SparkSqlBaseParser.FromClauseContext ctx) {
-        if (!ctx.lateralView().isEmpty()) {
-            throw unsupported("LATERAL VIEW");
-        }
-        if (ctx.pivotClause() != null || ctx.unpivotClause() != null) {
-            throw unsupported("PIVOT/UNPIVOT");
+        if (ctx.unpivotClause() != null) {
+            throw unsupported("UNPIVOT");
         }
         Relation result = null;
         for (SparkSqlBaseParser.RelationContext relation : ctx.relation()) {
             Relation next = root.visit(relation, Relation.class);
             result = result == null ? next : new JoinRelation(null, result, next, null, false);
         }
+        for (SparkSqlBaseParser.LateralViewContext lateralView : ctx.lateralView()) {
+            result = buildLateralView(result, lateralView);
+        }
+        if (ctx.pivotClause() != null) {
+            result = buildPivot(result, ctx.pivotClause());
+        }
         return result;
+    }
+
+    /**
+     * PIVOT (agg [AS a], ... FOR col IN (value [AS v], ...)) is the StarRocks pivot clause. The values have to be
+     * literals.
+     */
+    private Relation buildPivot(Relation input, SparkSqlBaseParser.PivotClauseContext ctx) {
+        List<PivotAggregation> aggregations = new ArrayList<>();
+        for (SparkSqlBaseParser.NamedExpressionContext named : ctx.aggregates.namedExpression()) {
+            Expr aggregate = root.visit(named.expression(), Expr.class);
+            if (!(aggregate instanceof FunctionCallExpr) || named.identifierList() != null) {
+                throw unsupported("PIVOT aggregate that is not a function call");
+            }
+            String alias = named.name == null ? null : SparkParserUtils.identifier(named.name);
+            aggregations.add(new PivotAggregation((FunctionCallExpr) aggregate, alias, pos(named)));
+        }
+
+        List<SlotRef> columns = new ArrayList<>();
+        for (SparkSqlBaseParser.IdentifierContext identifier : ctx.pivotColumn().identifiers) {
+            columns.add(new SlotRef(QualifiedName.of(List.of(SparkParserUtils.identifier(identifier)), pos(ctx))));
+        }
+
+        List<PivotValue> values = new ArrayList<>();
+        for (SparkSqlBaseParser.PivotValueContext value : ctx.pivotValues) {
+            List<LiteralExpr> literals = new ArrayList<>();
+            ParseTree inner = SparkParserUtils.unwrapSingleChild(value.expression());
+            List<SparkSqlBaseParser.ExpressionContext> parts = new ArrayList<>();
+            if (inner instanceof SparkSqlBaseParser.RowConstructorContext) {
+                for (SparkSqlBaseParser.NamedExpressionContext item
+                        : ((SparkSqlBaseParser.RowConstructorContext) inner).namedExpression()) {
+                    parts.add(item.expression());
+                }
+            } else {
+                parts.add(value.expression());
+            }
+            for (SparkSqlBaseParser.ExpressionContext part : parts) {
+                Expr literal = root.visit(part, Expr.class);
+                if (!(literal instanceof LiteralExpr)) {
+                    throw unsupported("PIVOT value that is not a literal");
+                }
+                literals.add((LiteralExpr) literal);
+            }
+            String alias = value.identifier() == null ? null : SparkParserUtils.identifier(value.identifier());
+            if (alias == null && literals.size() == 1 && literals.get(0) instanceof StringLiteral) {
+                // Spark names the column after the string, without quotes
+                alias = ((StringLiteral) literals.get(0)).getValue();
+            }
+            if (literals.size() != columns.size()) {
+                throw new ParsingException("The number of PIVOT values does not match the number of PIVOT columns",
+                        pos(value));
+            }
+            values.add(new PivotValue(literals, alias, pos(value)));
+        }
+        return new PivotRelation(input, aggregations, columns, values, pos(ctx));
     }
 
     @Override
@@ -365,10 +762,13 @@ public class SparkRelationBuilder extends SparkSqlBaseParserBaseVisitor<ParseNod
         }
         Relation left = root.visit(ctx.relationPrimary(), Relation.class);
         for (SparkSqlBaseParser.RelationExtensionContext extension : ctx.relationExtension()) {
-            if (extension.joinRelation() == null) {
-                throw unsupported("PIVOT/UNPIVOT");
+            if (extension.pivotClause() != null) {
+                left = buildPivot(left, extension.pivotClause());
+            } else if (extension.joinRelation() != null) {
+                left = buildJoin(left, extension.joinRelation());
+            } else {
+                throw unsupported("UNPIVOT");
             }
-            left = buildJoin(left, extension.joinRelation());
         }
         return left;
     }
@@ -425,13 +825,7 @@ public class SparkRelationBuilder extends SparkSqlBaseParserBaseVisitor<ParseNod
         if (ctx.temporalClause() != null) {
             throw unsupported("time travel (VERSION/TIMESTAMP AS OF)");
         }
-        if (ctx.sample() != null) {
-            throw unsupported("TABLESAMPLE");
-        }
         SparkSqlBaseParser.TableAliasContext aliasCtx = ctx.tableAlias();
-        if (aliasCtx.identifierList() != null) {
-            throw unsupported("column aliases of a table");
-        }
         if (ctx.identifierReference().multipartIdentifier() == null) {
             throw unsupported("IDENTIFIER(...) table reference");
         }
@@ -448,17 +842,46 @@ public class SparkRelationBuilder extends SparkSqlBaseParserBaseVisitor<ParseNod
         }
         TableRelation relation = new TableRelation(toTableName(parts, pos(ctx)), null, new ArrayList<>(),
                 new ArrayList<>(), pos(ctx));
-        if (aliasCtx.strictIdentifier() != null) {
-            relation.setAlias(new TableName(null, SparkParserUtils.identifier(aliasCtx.strictIdentifier())));
+        String alias = aliasCtx.strictIdentifier() == null ? null
+                : SparkParserUtils.identifier(aliasCtx.strictIdentifier());
+        if (ctx.sample() == null && aliasCtx.identifierList() == null) {
+            if (alias != null) {
+                relation.setAlias(new TableName(null, alias));
+            }
+            return relation;
         }
-        return relation;
+        // TABLESAMPLE or a column alias list: (SELECT * FROM t [LIMIT n]) alias (c1, c2, ...)
+        SelectRelation select = selectStar(relation);
+        if (ctx.sample() != null) {
+            select.setLimit(sampleLimit(ctx.sample()));
+        }
+        SubqueryRelation subquery = new SubqueryRelation(new QueryStatement(select));
+        subquery.setAlias(new TableName(null, alias != null ? alias : parts.get(parts.size() - 1)));
+        if (aliasCtx.identifierList() != null) {
+            subquery.setColumnOutputNames(SparkParserUtils.identifierSeq(aliasCtx.identifierList()));
+        }
+        return subquery;
+    }
+
+    /**
+     * TABLESAMPLE (n ROWS) keeps at most n rows. The other methods sample randomly and cannot be reproduced.
+     */
+    private LimitElement sampleLimit(SparkSqlBaseParser.SampleContext ctx) {
+        if (!(ctx.sampleMethod() instanceof SparkSqlBaseParser.SampleByRowsContext)) {
+            throw unsupported("TABLESAMPLE by PERCENT, BUCKET or bytes");
+        }
+        SparkSqlBaseParser.SampleByRowsContext rows = (SparkSqlBaseParser.SampleByRowsContext) ctx.sampleMethod();
+        return new LimitElement(0, constantLong(rows.expression(), "TABLESAMPLE"), pos(ctx));
+    }
+
+    private static SelectRelation selectStar(Relation from) {
+        List<SelectListItem> items = new ArrayList<>();
+        items.add(new SelectListItem((TableName) null, NodePosition.ZERO, new ArrayList<>()));
+        return new SelectRelation(new SelectList(items, false), from, null, null, null);
     }
 
     @Override
     public ParseNode visitAliasedQuery(SparkSqlBaseParser.AliasedQueryContext ctx) {
-        if (ctx.sample() != null) {
-            throw unsupported("TABLESAMPLE");
-        }
         QueryRelation query = root.visit(ctx.query(), QueryRelation.class);
         SubqueryRelation subquery = new SubqueryRelation(new QueryStatement(query));
         SparkSqlBaseParser.TableAliasContext aliasCtx = ctx.tableAlias();
@@ -468,13 +891,21 @@ public class SparkRelationBuilder extends SparkSqlBaseParserBaseVisitor<ParseNod
         if (aliasCtx.identifierList() != null) {
             subquery.setColumnOutputNames(SparkParserUtils.identifierSeq(aliasCtx.identifierList()));
         }
-        return subquery;
+        if (ctx.sample() == null) {
+            return subquery;
+        }
+        // the sample is taken after the column aliases are applied
+        SelectRelation select = selectStar(subquery);
+        select.setLimit(sampleLimit(ctx.sample()));
+        SubqueryRelation sampled = new SubqueryRelation(new QueryStatement(select));
+        sampled.setAlias(new TableName(null, alias));
+        return sampled;
     }
 
     @Override
     public ParseNode visitAliasedRelation(SparkSqlBaseParser.AliasedRelationContext ctx) {
         if (ctx.sample() != null) {
-            throw unsupported("TABLESAMPLE");
+            throw unsupported("TABLESAMPLE of a parenthesized relation");
         }
         if (ctx.tableAlias().strictIdentifier() != null) {
             throw unsupported("alias of a parenthesized relation");

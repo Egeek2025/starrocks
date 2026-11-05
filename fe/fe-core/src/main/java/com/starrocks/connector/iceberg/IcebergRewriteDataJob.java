@@ -167,11 +167,9 @@ public class IcebergRewriteDataJob {
 
     public void prepare() throws Exception {
         this.parsedStmt = com.starrocks.sql.parser.SqlParser
-                .parse(executionSql, context.getSessionVariable())
-                .get(0);
+                .parseOneWithStarRocksDialect(executionSql, context.getSessionVariable());
         StatementBase planningParsedStmt = com.starrocks.sql.parser.SqlParser
-                .parse(planningSql, context.getSessionVariable())
-                .get(0);
+                .parseOneWithStarRocksDialect(planningSql, context.getSessionVariable());
 
         this.rewriteStmt = new IcebergRewriteStmt(
                 (InsertStmt) planningParsedStmt, fileSelector.rewriteAll(), writeRowLineage, hasPartitionFilter);

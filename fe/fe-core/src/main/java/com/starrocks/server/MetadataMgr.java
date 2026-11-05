@@ -69,6 +69,7 @@ import com.starrocks.connector.exception.StarRocksConnectorException;
 import com.starrocks.connector.iceberg.Partition;
 import com.starrocks.connector.metadata.MetadataTable;
 import com.starrocks.connector.metadata.MetadataTableType;
+import com.starrocks.connector.parser.spark.SparkCaseInsensitiveNames;
 import com.starrocks.connector.statistics.ConnectorTableColumnStats;
 import com.starrocks.connector.statistics.StatisticsUtils;
 import com.starrocks.qe.ConnectContext;
@@ -264,6 +265,22 @@ public class MetadataMgr {
     }
 
     public Database getDb(ConnectContext context, String catalogName, String dbName) {
+        Database db = getDbExact(context, catalogName, dbName);
+        if (db == null && dbName != null && SparkCaseInsensitiveNames.isEnabled(context)) {
+            // Spark dialect: the exact name wins, a name that differs by case is the fallback
+            String resolved = resolveDbNameIgnoringCase(context, catalogName, dbName);
+            if (resolved != null && !resolved.equals(dbName)) {
+                db = getDbExact(context, catalogName, resolved);
+            }
+        }
+        return db;
+    }
+
+    private String resolveDbNameIgnoringCase(ConnectContext context, String catalogName, String dbName) {
+        return SparkCaseInsensitiveNames.pick("database", dbName, listDbNames(context, catalogName), null);
+    }
+
+    private Database getDbExact(ConnectContext context, String catalogName, String dbName) {
         Optional<ConnectorMetadata> connectorMetadata = getOptionalMetadata(catalogName);
         Database db = connectorMetadata.map(metadata -> metadata.getDb(context, dbName)).orElse(null);
         // set catalog name if external catalog
@@ -525,6 +542,23 @@ public class MetadataMgr {
     }
 
     public Table getTable(ConnectContext context, String catalogName, String dbName, String tblName) {
+        Table table = getTableExact(context, catalogName, dbName, tblName);
+        if (table == null && dbName != null && tblName != null && SparkCaseInsensitiveNames.isEnabled(context)) {
+            // Spark dialect: the exact names win, names that differ by case are the fallback
+            String realDb = getDbExact(context, catalogName, dbName) != null
+                    ? dbName : resolveDbNameIgnoringCase(context, catalogName, dbName);
+            if (realDb != null) {
+                String realTable = SparkCaseInsensitiveNames.pick("table", tblName,
+                        listTableNames(context, catalogName, realDb), realDb);
+                if (realTable != null && (!realDb.equals(dbName) || !realTable.equals(tblName))) {
+                    table = getTableExact(context, catalogName, realDb, realTable);
+                }
+            }
+        }
+        return table;
+    }
+
+    private Table getTableExact(ConnectContext context, String catalogName, String dbName, String tblName) {
         Optional<ConnectorMetadata> connectorMetadata = getOptionalMetadata(catalogName);
         Table connectorTable = connectorMetadata.map(metadata -> metadata.getTable(context, dbName, tblName)).orElse(null);
         if (connectorTable != null && !connectorTable.isMetadataTable()) {

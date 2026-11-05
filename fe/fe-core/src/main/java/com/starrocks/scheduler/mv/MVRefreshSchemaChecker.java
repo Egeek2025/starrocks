@@ -144,7 +144,7 @@ public final class MVRefreshSchemaChecker {
         if (mv.getCurrentRefreshMode().isIncrementalOrAuto() && mv.getRowIdStrategy() != null) {
             queryStmt = IvmRefreshDefinition.deriveRewrittenQuery(context, mv);
         } else {
-            List<StatementBase> statements = SqlParser.parse(selectSql, context.getSessionVariable());
+            List<StatementBase> statements = SqlParser.parseWithStarRocksDialect(selectSql, context.getSessionVariable());
             if (statements.isEmpty() || !(statements.get(0) instanceof QueryStatement)) {
                 return;
             }

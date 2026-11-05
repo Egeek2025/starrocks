@@ -551,7 +551,7 @@ public class MvUtils {
         StatementBase mvStmt;
         try {
             List<StatementBase> statementBases =
-                    com.starrocks.sql.parser.SqlParser.parse(sql, connectContext.getSessionVariable());
+                    com.starrocks.sql.parser.SqlParser.parseWithStarRocksDialect(sql, connectContext.getSessionVariable());
             Preconditions.checkState(statementBases.size() == 1);
             mvStmt = statementBases.get(0);
         } catch (ParsingException parsingException) {
@@ -1466,7 +1466,7 @@ public class MvUtils {
         }
         try {
             List<StatementBase> statementBases =
-                    com.starrocks.sql.parser.SqlParser.parse(query, connectContext.getSessionVariable());
+                    com.starrocks.sql.parser.SqlParser.parseWithStarRocksDialect(query, connectContext.getSessionVariable());
             if (statementBases.size() != 1) {
                 return null;
             }

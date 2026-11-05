@@ -849,6 +849,20 @@ public class InsertAnalyzer {
         }
     }
 
+    private static TableRef canonicalTargetRef(ConnectContext session, TableRef ref, Table table) {
+        Database database = GlobalStateMgr.getCurrentState().getMetadataMgr()
+                .getDb(session, ref.getCatalogName(), ref.getDbName());
+        String db = database != null ? database.getFullName() : ref.getDbName();
+        String tbl = table.getName() != null && table.getName().equalsIgnoreCase(ref.getTableName())
+                ? table.getName() : ref.getTableName();
+        if (db.equals(ref.getDbName()) && tbl.equals(ref.getTableName())) {
+            return ref;
+        }
+        String alias = ref.hasExplicitAlias() ? ref.getExplicitAlias() : null;
+        return new TableRef(QualifiedName.of(Arrays.asList(ref.getCatalogName(), db, tbl), ref.getPos()),
+                ref.getPartitionRef(), alias, ref.getPos());
+    }
+
     private static Table getTargetTable(InsertStmt insertStmt, ConnectContext session) {
         if (insertStmt.useTableFunctionAsTargetTable()) {
             return insertStmt.makeTableFunctionTable(session.getSessionVariable());
@@ -884,6 +898,10 @@ public class InsertAnalyzer {
         });
         if (table == null) {
             throw new SemanticException("Table %s is not found", tableName);
+        }
+        if (session.isMetadataNameCaseInsensitive()) {
+            // Spark dialect: the privilege check goes by the names of the metadata, not by the spelling of the query
+            insertStmt.setTableRef(canonicalTargetRef(session, tableRef, table));
         }
 
         if (table instanceof MaterializedView && !insertStmt.isSystem()) {

@@ -64,7 +64,7 @@ public class SparkDialect implements SqlDialect {
                 // nothing but whitespace or comments, let the StarRocks parser decide
                 throw new SparkUnsupportedException("No statement found");
             }
-            SparkAstBuilder builder = new SparkAstBuilder();
+            SparkAstBuilder builder = new SparkAstBuilder(sessionVariable);
             List<StatementBase> statements = new ArrayList<>(contexts.size());
             for (int idx = 0; idx < contexts.size(); ++idx) {
                 ParseNode node = builder.visit(contexts.get(idx));

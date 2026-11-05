@@ -660,7 +660,7 @@ public class DictionaryMgr implements Writable, GsonPostProcessable {
             Preconditions.checkNotNull(sqlString);
             List<StatementBase> stmts = null;
             try {
-                stmts = com.starrocks.sql.parser.SqlParser.parse(sqlString, context.getSessionVariable());
+                stmts = com.starrocks.sql.parser.SqlParser.parseWithStarRocksDialect(sqlString, context.getSessionVariable());
             } catch (ParsingException parsingException) {
                 throw new AnalysisException(parsingException.getMessage());
             }

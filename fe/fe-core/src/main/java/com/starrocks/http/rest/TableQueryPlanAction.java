@@ -229,7 +229,7 @@ public class TableQueryPlanAction extends RestBaseAction {
             long limit = context.getSessionVariable().getSqlSelectLimit();
             context.getSessionVariable().setSqlSelectLimit(SessionVariable.DEFAULT_SELECT_LIMIT);
             statementBase =
-                    com.starrocks.sql.parser.SqlParser.parse(sql, context.getSessionVariable()).get(0);
+                    com.starrocks.sql.parser.SqlParser.parseOneWithStarRocksDialect(sql, context.getSessionVariable());
             execPlan = StatementPlanner.plan(statementBase, context);
             context.getSessionVariable().setSingleNodeExecPlan(false);
             context.getSessionVariable().setSqlSelectLimit(limit);

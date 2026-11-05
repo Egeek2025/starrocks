@@ -37,6 +37,7 @@ package com.starrocks.qe;
 import com.starrocks.authentication.UserAuthenticationInfo;
 import com.starrocks.catalog.UserIdentity;
 import com.starrocks.common.DdlException;
+import com.starrocks.connector.parser.spark.SparkSetStmt;
 import com.starrocks.server.GlobalStateMgr;
 import com.starrocks.sql.analyzer.SetStmtAnalyzer;
 import com.starrocks.sql.ast.SetListItem;
@@ -89,6 +90,10 @@ public class SetExecutor {
         Map<String, UserVariable> clonedUserVars = new ConcurrentHashMap<>();
         boolean hasUserVar = stmt.getSetListItems().stream().anyMatch(var -> var instanceof UserVariable);
         boolean executeSuccess = true;
+        if (stmt instanceof SparkSetStmt) {
+            // warnings of the Spark dialect, and the strict mode check, before anything is changed
+            ((SparkSetStmt) stmt).beforeExecute(ctx);
+        }
         if (hasUserVar) {
             clonedUserVars.putAll(ctx.getUserVariables());
             ctx.modifyUserVariablesCopyInWrite(clonedUserVars);
@@ -105,6 +110,9 @@ public class SetExecutor {
                 } else {
                     setVariablesOfAllType(var);
                 }
+            }
+            if (stmt instanceof SparkSetStmt) {
+                ((SparkSetStmt) stmt).afterExecute(ctx);
             }
         } catch (Throwable e) {
             if (hasUserVar) {

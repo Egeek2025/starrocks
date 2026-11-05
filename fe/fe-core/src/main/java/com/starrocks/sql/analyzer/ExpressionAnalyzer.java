@@ -38,6 +38,7 @@ import com.starrocks.catalog.TableName;
 import com.starrocks.catalog.UserIdentity;
 import com.starrocks.common.AnalysisException;
 import com.starrocks.common.DdlException;
+import com.starrocks.connector.parser.spark.function.SparkFunctionRewriter;
 import com.starrocks.qe.ConnectContext;
 import com.starrocks.qe.SessionVariable;
 import com.starrocks.qe.SqlModeHelper;
@@ -639,9 +640,16 @@ public class ExpressionAnalyzer {
             boolean zeroBased = node.isZeroBasedSubscript();
             // clear the flag so that analyzing the node again does not shift the subscript twice
             node.setZeroBasedSubscript(false);
+            boolean sparkElementAt = node.isSparkElementAt();
+            node.setSparkElementAt(false);
             if (expr.getType().isArrayType()) {
                 if (!subscript.getType().isNumericType()) {
                     throw new SemanticException("array subscript must have type integer", subscript.getPos());
+                }
+                if (sparkElementAt) {
+                    // Spark element_at: a negative index counts from the end of the array
+                    SparkFunctionRewriter.rewriteElementAt(node, sparkRewriteContext(scope));
+                    subscript = node.getChild(1);
                 }
                 if (zeroBased) {
                     // Spark arrays are 0-based, StarRocks arrays are 1-based
@@ -1142,7 +1150,12 @@ public class ExpressionAnalyzer {
 
                 return visitFunctionCall(node, scope);
             }
- 
+
+            // Spark dialect: rewrites that depend on the argument types, in place like the date_part rewrite above
+            if (node.isSparkDialect() && SparkFunctionRewriter.rewriteInPlace(node, sparkRewriteContext(scope))) {
+                return visitFunctionCall(node, scope);
+            }
+
             // Handle backward compatibility parameter conversion
             handleBackwardCompatibleParameterConversion(fnName, node);
 
@@ -1237,6 +1250,38 @@ public class ExpressionAnalyzer {
             checkGetQueryProfileAccess(node);
             Authorizer.checkAIFunctionUsage(session, node);
             return null;
+        }
+
+        private SparkFunctionRewriter.Context sparkRewriteContext(Scope scope) {
+            return new SparkFunctionRewriter.Context() {
+                @Override
+                public ConnectContext session() {
+                    return session;
+                }
+
+                @Override
+                public void analyze(Expr node) {
+                    visit(node, scope);
+                }
+
+                @Override
+                public Expr copyOf(Expr analyzed) {
+                    Expr copy = analyzed.clone();
+                    analyzeTree(copy, scope);
+                    return copy;
+                }
+            };
+        }
+
+        // analyzes a tree bottom-up, node by node; lambda functions are not supported
+        private void analyzeTree(Expr expr, Scope scope) {
+            if (ExprUtils.hasLambdaFunction(expr)) {
+                throw new SemanticException("Spark function rewrite does not support lambda arguments here");
+            }
+            for (Expr child : expr.getChildren()) {
+                analyzeTree(child, scope);
+            }
+            visit(expr, scope);
         }
 
         // get_query_profile() serves the same payload as ANALYZE PROFILE through a BE-side RPC that carries no

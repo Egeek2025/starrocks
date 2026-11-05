@@ -333,7 +333,7 @@ public class DeleteMgr implements Writable, MemoryTrackable {
         try {
             // Bypass the privilege check, as current user may have only the DELETE privilege but not SELECT
             currentSession.setBypassAuthorizerCheck(true);
-            List<StatementBase> parse = SqlParser.parse(fakeSql, currentSession.getSessionVariable());
+            List<StatementBase> parse = SqlParser.parseWithStarRocksDialect(fakeSql, currentSession.getSessionVariable());
             StatementBase selectStmt = parse.get(0);
             Analyzer.analyze(selectStmt, ConnectContext.get());
             ExecPlan plan = StatementPlanner.plan(selectStmt, ConnectContext.get());

@@ -142,7 +142,7 @@ public class SPMPlanner {
     }
 
     private boolean bind(BaselinePlan baseline, StatementBase query) {
-        List<StatementBase> binder = SqlParser.parse(baseline.getBindSql(), session.getSessionVariable());
+        List<StatementBase> binder = SqlParser.parseWithStarRocksDialect(baseline.getBindSql(), session.getSessionVariable());
         Preconditions.checkState(binder.size() == 1);
         // remove when support cache
         analyze(binder.get(0));
@@ -150,7 +150,7 @@ public class SPMPlanner {
     }
 
     private StatementBase replacePlan(BaselinePlan baseline) {
-        List<StatementBase> plan = SqlParser.parse(baseline.getPlanSql(), session.getSessionVariable());
+        List<StatementBase> plan = SqlParser.parseWithStarRocksDialect(baseline.getPlanSql(), session.getSessionVariable());
         Preconditions.checkState(plan.size() == 1);
         if (placeholderValues.isEmpty()) {
             return plan.get(0);

@@ -248,7 +248,7 @@ public class SimpleExecutor {
         try {
             ConnectContext context = createConnectContext();
 
-            List<StatementBase> parsedStmts = SqlParser.parse(sql, context.getSessionVariable());
+            List<StatementBase> parsedStmts = SqlParser.parseWithStarRocksDialect(sql, context.getSessionVariable());
             for (var parsedStmt : ListUtils.emptyIfNull(parsedStmts)) {
                 Analyzer.analyze(parsedStmt, context);
                 DDLStmtExecutor.execute(parsedStmt, context);

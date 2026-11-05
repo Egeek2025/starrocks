@@ -14,6 +14,7 @@
 
 package com.starrocks.catalog;
 
+import com.starrocks.connector.parser.spark.SparkDialect;
 import com.starrocks.qe.ConnectContext;
 import com.starrocks.qe.SessionVariable;
 import com.starrocks.sql.analyzer.AnalyzerUtils;
@@ -61,10 +62,22 @@ public abstract class ConnectorView extends Table {
         return queryStatement;
     }
 
+    /**
+     * Parses the text of the view definition. A session in the Spark dialect must not parse it as Spark SQL, the
+     * text of a view is not known to be Spark SQL (Hive views of Spark are told apart by type in the future), so it
+     * is parsed as StarRocks SQL. Other sessions keep parsing it in their own dialect.
+     */
+    protected ParseNode parseDefinition(SessionVariable sessionVariable) {
+        if (SparkDialect.NAME.equalsIgnoreCase(sessionVariable.getSqlDialect())) {
+            return com.starrocks.sql.parser.SqlParser.parseOneWithStarRocksDialect(inlineViewDef, sessionVariable);
+        }
+        return com.starrocks.sql.parser.SqlParser.parse(inlineViewDef, sessionVariable).get(0);
+    }
+
     protected QueryStatement doGetQueryStatement(SessionVariable sessionVariable) {
         ParseNode node;
         try {
-            node = com.starrocks.sql.parser.SqlParser.parse(inlineViewDef, sessionVariable).get(0);
+            node = parseDefinition(sessionVariable);
         } catch (Exception e) {
             LOG.warn("stmt is {}", inlineViewDef);
             LOG.warn("exception because: ", e);

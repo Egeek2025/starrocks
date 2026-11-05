@@ -65,12 +65,25 @@ public class FunctionCallExpr extends Expr {
     // resetAnalysisState() which is used during expr substitution.
     private boolean isMergeAggFn;
 
+    // The call was written in the Spark dialect and the function must keep its Spark semantics: the analyzer may
+    // rewrite it by argument type (see SparkFunctionRewriter). Marked per node, not per session, so the calls of a
+    // view body or of a statement that fell back to the StarRocks parser are left alone. It is not part of equals().
+    private boolean sparkDialect = false;
+
     // TODO(yan): add more known functions which are monotonic.
     private static final ImmutableSet<String> MONOTONIC_FUNCTION_SET =
             new ImmutableSet.Builder<String>().add(FunctionSet.YEAR, FunctionSet.DATE_TRUNC).build();
 
     public boolean isAnalyticFnCall() {
         return isAnalyticFnCall;
+    }
+
+    public boolean isSparkDialect() {
+        return sparkDialect;
+    }
+
+    public void setSparkDialect(boolean sparkDialect) {
+        this.sparkDialect = sparkDialect;
     }
 
     public void setIsAnalyticFnCall(boolean v) {
@@ -197,6 +210,7 @@ public class FunctionCallExpr extends Expr {
         // Just inherit the function object from 'e'.
         fn = e.fn;
         this.isMergeAggFn = e.isMergeAggFn;
+        this.sparkDialect = e.sparkDialect;
         this.aiProviderId = e.aiProviderId;
         if (params.exprs() != null) {
             children.addAll(params.exprs());
@@ -226,6 +240,7 @@ public class FunctionCallExpr extends Expr {
             }
         }
         this.isMergeAggFn = other.isMergeAggFn;
+        this.sparkDialect = other.sparkDialect;
         this.aiProviderId = aiProviderId;
     }
 

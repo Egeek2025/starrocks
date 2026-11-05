@@ -14,6 +14,7 @@
 
 package com.starrocks.sql.analyzer;
 
+import com.starrocks.connector.parser.spark.SparkCaseInsensitiveNames;
 import com.starrocks.qe.ConnectContext;
 import com.starrocks.server.GlobalStateMgr;
 import com.starrocks.sql.ast.AddSqlBlackListStmt;
@@ -208,7 +209,8 @@ public class Analyzer {
         if (bindSparkAlias) {
             context.setRelationAliasCaseInSensitive(true);
         }
-        try {
+        // Database and table names of a Spark statement resolve case-insensitively when there is no exact match
+        try (SparkCaseInsensitiveNames.Scope ignored = SparkCaseInsensitiveNames.bind(context, statement)) {
             GlobalStateMgr.getCurrentState().getAnalyzer().analyzerVisitor.visit(statement, context);
         } finally {
             if (bindSparkAlias) {

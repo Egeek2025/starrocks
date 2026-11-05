@@ -514,7 +514,7 @@ public abstract class MVRefreshProcessor {
                                            PCellSortedSet mvTargetPartitionNames,
                                            String definition) throws AnalysisException {
         final InsertStmt insertStmt =
-                (InsertStmt) SqlParser.parse(definition, ctx.getSessionVariable()).get(0);
+                (InsertStmt) SqlParser.parseOneWithStarRocksDialect(definition, ctx.getSessionVariable());
         // set target partitions
         if (PCellUtils.isNotEmpty(mvTargetPartitionNames)) {
             PartitionRef partitionRef = new PartitionRef(Lists.newArrayList(mvTargetPartitionNames.getPartitionNames()),

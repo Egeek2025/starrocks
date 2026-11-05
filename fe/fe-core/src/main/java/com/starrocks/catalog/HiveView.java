@@ -49,11 +49,19 @@ public class HiveView extends ConnectorView {
         return super.doGetQueryStatement(sessionVariable);
     }
 
+    @Override
+    protected ParseNode parseDefinition(SessionVariable sessionVariable) {
+        if (viewType == Type.Trino) {
+            // doGetQueryStatement has switched the dialect of sessionVariable to trino
+            return com.starrocks.sql.parser.SqlParser.parse(inlineViewDef, sessionVariable).get(0);
+        }
+        return super.parseDefinition(sessionVariable);
+    }
+
     public ParseNode rollback(SessionVariable sessionVariable) {
         if (viewType == Type.Trino) {
             // try to parse with starrocks sql dialect
-            sessionVariable.setSqlDialect("starrocks");
-            return com.starrocks.sql.parser.SqlParser.parse(inlineViewDef, sessionVariable).get(0);
+            return com.starrocks.sql.parser.SqlParser.parseOneWithStarRocksDialect(inlineViewDef, sessionVariable);
         } else {
             return super.rollback(sessionVariable);
         }

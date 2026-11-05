@@ -3222,7 +3222,7 @@ public class StmtExecutor {
         String db = exportStmt.getDbName();
         String showStmt = String.format("SHOW EXPORT FROM %s WHERE QueryId = \"%s\";", db, queryId);
         StatementBase statementBase =
-                com.starrocks.sql.parser.SqlParser.parse(showStmt, context.getSessionVariable()).get(0);
+                com.starrocks.sql.parser.SqlParser.parseOneWithStarRocksDialect(showStmt, context.getSessionVariable());
         ShowExportStmt showExportStmt = (ShowExportStmt) statementBase;
         showExportStmt.setQueryId(queryId);
         ShowResultSet resultSet = GlobalStateMgr.getCurrentState().getShowExecutor().execute(showExportStmt, context);

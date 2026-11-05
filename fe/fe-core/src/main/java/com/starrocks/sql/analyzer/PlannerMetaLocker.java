@@ -24,6 +24,7 @@ import com.starrocks.catalog.View;
 import com.starrocks.common.Pair;
 import com.starrocks.common.util.concurrent.lock.LockType;
 import com.starrocks.common.util.concurrent.lock.Locker;
+import com.starrocks.connector.parser.spark.SparkCaseInsensitiveNames;
 import com.starrocks.qe.ConnectContext;
 import com.starrocks.server.CatalogMgr;
 import com.starrocks.server.GlobalStateMgr;
@@ -127,7 +128,11 @@ public class PlannerMetaLocker implements AutoCloseable {
 
     public PlannerMetaLocker(ConnectContext session, StatementBase statementBase) {
         TableCollector collector = new TableCollector(session, dbs, tables);
-        collector.visit(statementBase);
+        // The tables are collected before the analysis, by the names of the query: a Spark statement resolves them
+        // case-insensitively, as the analyzer does, or the lock set and the analysis would see different tables.
+        try (SparkCaseInsensitiveNames.Scope ignored = SparkCaseInsensitiveNames.bind(session, statementBase)) {
+            collector.visit(statementBase);
+        }
         // The databases the statement names, not those of the tables behind a view: they classify the query
         // (resource groups and the like) and stay what the user wrote.
         session.setCurrentSqlDbIds(new HashSet<>(collector.statementDbIds));

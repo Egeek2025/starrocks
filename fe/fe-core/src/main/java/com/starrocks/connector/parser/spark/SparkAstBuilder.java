@@ -14,12 +14,15 @@
 
 package com.starrocks.connector.parser.spark;
 
+import com.starrocks.qe.SessionVariable;
+import com.starrocks.sql.ast.InsertStmt;
 import com.starrocks.sql.ast.ParseNode;
 import com.starrocks.sql.ast.QueryRelation;
 import com.starrocks.sql.ast.QueryStatement;
 import com.starrocks.sql.ast.StatementBase;
 import com.starrocks.sql.parser.spark.gen.SparkSqlBaseParser;
 import com.starrocks.sql.parser.spark.gen.SparkSqlBaseParserBaseVisitor;
+import com.starrocks.type.Type;
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.RuleNode;
@@ -35,6 +38,7 @@ import java.util.Map;
  * <ul>
  *   <li>{@link SparkRelationBuilder}: queries, FROM clause, joins, set operations, CTE.</li>
  *   <li>{@link SparkExprBuilder}: expressions, literals, types, function calls, windows.</li>
+ *   <li>{@link SparkStatementBuilder}: DML, DDL, session commands, SHOW and DESCRIBE.</li>
  * </ul>
  * A builder handles a grammar rule by declaring a public {@code visitXxx(XxxContext)} method; it is found by
  * reflection when the builder is registered, so adding a rule never requires touching this class. A rule that no
@@ -44,9 +48,28 @@ import java.util.Map;
 public class SparkAstBuilder extends SparkSqlBaseParserBaseVisitor<ParseNode> {
     private final Map<Class<?>, SparkSqlBaseParserBaseVisitor<ParseNode>> dispatch = new HashMap<>();
 
+    private final SparkExprBuilder exprBuilder;
+
     public SparkAstBuilder() {
+        this(null);
+    }
+
+    /**
+     * @param sessionVariable the session the statements are parsed for; statements read its spark_* variables
+     *                        (e.g. spark_default_catalog). May be null.
+     */
+    public SparkAstBuilder(SessionVariable sessionVariable) {
+        exprBuilder = new SparkExprBuilder(this);
         register(new SparkRelationBuilder(this));
-        register(new SparkExprBuilder(this));
+        register(exprBuilder);
+        register(new SparkStatementBuilder(this, sessionVariable));
+    }
+
+    /**
+     * Maps a Spark data type to the StarRocks type, see {@link SparkExprBuilder#toType}.
+     */
+    public Type toType(SparkSqlBaseParser.DataTypeContext ctx) {
+        return exprBuilder.toType(ctx);
     }
 
     /**
@@ -144,10 +167,14 @@ public class SparkAstBuilder extends SparkSqlBaseParserBaseVisitor<ParseNode> {
         }
         // FORMATTED is the plain readable plan, which is the StarRocks default
         ParseNode inner = visit(ctx.statement());
-        if (!(inner instanceof QueryStatement)) {
+        if (inner instanceof QueryStatement) {
+            ((QueryStatement) inner).setIsExplain(true, level);
+        } else if (inner instanceof InsertStmt) {
+            // the explain flag of an INSERT lives in its query
+            ((InsertStmt) inner).getQueryStatement().setIsExplain(true, level);
+        } else {
             throw unsupported(ctx);
         }
-        ((QueryStatement) inner).setIsExplain(true, level);
         return inner;
     }
 }

@@ -428,7 +428,7 @@ public class AlterJobMgr {
         context.setDatabase(dbName);
 
         // Try to parse and analyze the creation sql
-        List<StatementBase> statementBaseList = SqlParser.parse(createMvSql, context.getSessionVariable());
+        List<StatementBase> statementBaseList = SqlParser.parseWithStarRocksDialect(createMvSql, context.getSessionVariable());
         CreateMaterializedViewStatement createStmt = (CreateMaterializedViewStatement) statementBaseList.get(0);
         // RANGE is omission-only SQL, so reconstructed DDL cannot carry its persisted target type.
         // Preserve it explicitly before re-analysis, independent of the current selection switch.

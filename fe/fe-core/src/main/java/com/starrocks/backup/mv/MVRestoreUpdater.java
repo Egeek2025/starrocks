@@ -84,7 +84,8 @@ public class MVRestoreUpdater {
     private static QueryStatement analyzeMvDefineQuery(ConnectContext connectContext,
                                                        String defineSql) {
         // Try to parse and analyze the creation sql
-        List<StatementBase> statementBaseList = SqlParser.parse(defineSql, connectContext.getSessionVariable());
+        List<StatementBase> statementBaseList =
+                SqlParser.parseWithStarRocksDialect(defineSql, connectContext.getSessionVariable());
         StatementBase createStmt = statementBaseList.get(0);
         com.starrocks.sql.analyzer.Analyzer.analyze(createStmt, connectContext);
         return (QueryStatement) createStmt;

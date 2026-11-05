@@ -1029,6 +1029,24 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
     // Is Trino dialect downgraded to Starrocks
     public static final String ENABLE_DIALECT_DOWNGRADE = "enable_dialect_downgrade";
 
+    // Spark SQL dialect (sql_dialect = 'spark') switches. They only take effect for the Spark dialect.
+    // The Spark version whose semantics are emulated
+    public static final String SPARK_VERSION = "spark_version";
+    // spark.sql.ansi.enabled
+    public static final String SPARK_ANSI_ENABLED = "spark_ansi_enabled";
+    // spark.sql.caseSensitive
+    public static final String SPARK_CASE_SENSITIVE = "spark_case_sensitive";
+    // spark.sql.legacy.sizeOfNull
+    public static final String SPARK_LEGACY_SIZE_OF_NULL = "spark_legacy_size_of_null";
+    // the catalog that spark_catalog and unqualified databases map to
+    public static final String SPARK_DEFAULT_CATALOG = "spark_default_catalog";
+    // spark.sql.sources.partitionOverwriteMode: static or dynamic
+    public static final String SPARK_PARTITION_OVERWRITE_MODE = "spark_partition_overwrite_mode";
+    // an unknown spark.* configuration is an error instead of a warning
+    public static final String SPARK_STRICT_CONF = "spark_strict_conf";
+    // what to do with unsupported Spark semantics: error or downgrade
+    public static final String SPARK_UNSUPPORTED_BEHAVIOR = "spark_unsupported_behavior";
+
     public static final String ENABLE_OUTER_JOIN_REORDER = "enable_outer_join_reorder";
 
     public static final String CBO_REORDER_THRESHOLD_USE_EXHAUSTIVE = "cbo_reorder_threshold_use_exhaustive";
@@ -3273,6 +3291,30 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
 
     @VarAttr(name = ENABLE_DIALECT_DOWNGRADE)
     private boolean enableDialectDowngrade = true;
+
+    @VarAttr(name = SPARK_VERSION)
+    private String sparkVersion = "3.5";
+
+    @VarAttr(name = SPARK_ANSI_ENABLED)
+    private boolean sparkAnsiEnabled = false;
+
+    @VarAttr(name = SPARK_CASE_SENSITIVE)
+    private boolean sparkCaseSensitive = false;
+
+    @VarAttr(name = SPARK_LEGACY_SIZE_OF_NULL)
+    private boolean sparkLegacySizeOfNull = true;
+
+    @VarAttr(name = SPARK_DEFAULT_CATALOG)
+    private String sparkDefaultCatalog = "default_catalog";
+
+    @VarAttr(name = SPARK_PARTITION_OVERWRITE_MODE)
+    private String sparkPartitionOverwriteMode = "static";
+
+    @VarAttr(name = SPARK_STRICT_CONF)
+    private boolean sparkStrictConf = false;
+
+    @VarAttr(name = SPARK_UNSUPPORTED_BEHAVIOR)
+    private String sparkUnsupportedBehavior = "error";
 
     @VarAttr(name = ENABLE_OUTER_JOIN_REORDER)
     private boolean enableOuterJoinReorder = true;
@@ -6080,6 +6122,70 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
 
     public boolean isEnableDialectDowngrade() {
         return enableDialectDowngrade;
+    }
+
+    public String getSparkVersion() {
+        return sparkVersion;
+    }
+
+    public void setSparkVersion(String sparkVersion) {
+        this.sparkVersion = sparkVersion;
+    }
+
+    public boolean isSparkAnsiEnabled() {
+        return sparkAnsiEnabled;
+    }
+
+    public void setSparkAnsiEnabled(boolean sparkAnsiEnabled) {
+        this.sparkAnsiEnabled = sparkAnsiEnabled;
+    }
+
+    public boolean isSparkCaseSensitive() {
+        return sparkCaseSensitive;
+    }
+
+    public void setSparkCaseSensitive(boolean sparkCaseSensitive) {
+        this.sparkCaseSensitive = sparkCaseSensitive;
+    }
+
+    public boolean isSparkLegacySizeOfNull() {
+        return sparkLegacySizeOfNull;
+    }
+
+    public void setSparkLegacySizeOfNull(boolean sparkLegacySizeOfNull) {
+        this.sparkLegacySizeOfNull = sparkLegacySizeOfNull;
+    }
+
+    public String getSparkDefaultCatalog() {
+        return sparkDefaultCatalog;
+    }
+
+    public void setSparkDefaultCatalog(String sparkDefaultCatalog) {
+        this.sparkDefaultCatalog = sparkDefaultCatalog;
+    }
+
+    public String getSparkPartitionOverwriteMode() {
+        return sparkPartitionOverwriteMode;
+    }
+
+    public void setSparkPartitionOverwriteMode(String sparkPartitionOverwriteMode) {
+        this.sparkPartitionOverwriteMode = sparkPartitionOverwriteMode;
+    }
+
+    public boolean isSparkStrictConf() {
+        return sparkStrictConf;
+    }
+
+    public void setSparkStrictConf(boolean sparkStrictConf) {
+        this.sparkStrictConf = sparkStrictConf;
+    }
+
+    public String getSparkUnsupportedBehavior() {
+        return sparkUnsupportedBehavior;
+    }
+
+    public void setSparkUnsupportedBehavior(String sparkUnsupportedBehavior) {
+        this.sparkUnsupportedBehavior = sparkUnsupportedBehavior;
     }
 
     public void setEnableDialectDowngrade(boolean enableDialectDowngrade) {

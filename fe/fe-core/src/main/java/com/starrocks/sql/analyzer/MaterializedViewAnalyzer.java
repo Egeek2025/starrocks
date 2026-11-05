@@ -440,8 +440,8 @@ public class MaterializedViewAnalyzer {
                     // AUTO mode swallows the IVM SemanticException and falls back to PCT, but the trial may
                     // have prepended __ROW_ID__ to the query in place before bailing. Re-parse the pre-trial
                     // SQL so the PCT MV is built from the original query, not the half-rewritten one.
-                    queryStatement = (QueryStatement) SqlParser.parse(statement.getInlineViewDef(),
-                            context.getSessionVariable()).get(0);
+                    queryStatement = (QueryStatement) SqlParser.parseOneWithStarRocksDialect(statement.getInlineViewDef(),
+                            context.getSessionVariable());
                     Analyzer.analyze(queryStatement, context);
                     statement.setQueryStatement(queryStatement);
                     statement.setCurrentRefreshMode(MaterializedView.RefreshMode.PCT);
