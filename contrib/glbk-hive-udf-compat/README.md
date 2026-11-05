@@ -1,70 +1,99 @@
 # glbk Hive 日期 UDF 的 StarRocks 对齐版
 
-把 `glbk-hive-udf-1.0.0.jar`（源自 https://github.com/jet2007/HiveDateUDF ，Apache-2.0）中的 7 个 Hive UDF 移植为 StarRocks Java UDF。**函数名、参数个数、参数顺序、返回值与报错行为都和 Hive 上一致**，已有 SQL 不用改。
+把 `glbk-hive-udf-1.0.0.jar`（源自 https://github.com/jet2007/HiveDateUDF ，Apache-2.0）中的 7 个 Hive UDF 移植为 StarRocks Java UDF，**函数名和入参与 Hive 一致**，已有 SQL 不用改写调用方式。提供两套函数：
 
-## 对齐表
+| 函数集 | 用途 | 行为 |
+|---|---|---|
+| **正式版 `gl_*`** | 生产使用 | 修复了原 jar 的 bug（见“与 Hive 的差异”），非法数据返回 NULL，参数写错报错 |
+| **对账版 `gl_*_hive`** | 仅迁移期核对 Hive 历史结果，迁移完成后删除 | 与原 Hive jar 逐条一致（包括 bug），只把 Locale 固定为 US |
 
-| Hive 函数（原类） | StarRocks 注册签名 | StarRocks 类 | 返回 |
+面向业务方的变更说明：[CHANGES.md](CHANGES.md)。
+
+## 函数一览
+
+| Hive 函数 | 正式版（类） | 对账版（类） |
+|---|---|---|
+| `gl_date_delta(date, offsets[, format])` | `gl_date_delta(string, ...)`（`com.glbk.starrocks.udf.GlDateDelta`） | `gl_date_delta_hive(string, ...)`（`com.glbk.starrocks.udf.hive.GlDateDeltaHive`） |
+| `gl_date_diff(date1, date2[, interval])` | `gl_date_diff`（`GlDateDiff`） | `gl_date_diff_hive`（`GlDateDiffHive`） |
+| `gl_date_format(date[, format])` | `gl_date_format`（`GlDateFormat`） | `gl_date_format_hive`（`GlDateFormatHive`） |
+| `gl_now([format])` | `gl_now()`（`GlNowNoArg`）和 `gl_now(string, ...)`（`GlNow`） | `gl_now_hive()` / `gl_now_hive(string, ...)` |
+| `gl_how_many_day(date, dtype)` | `gl_how_many_day`（`GlHowManyDay`） | `gl_how_many_day_hive`（`GlHowManyDayHive`） |
+| `gl_date_first(date, dtype)` | `gl_date_first`（`GlDateFirst`） | `gl_date_first_hive`（`GlDateFirstHive`） |
+| `gl_date_last(date, dtype)` | `gl_date_last`（`GlDateLast`） | `gl_date_last_hive`（`GlDateLastHive`） |
+
+全部返回 STRING。实现要点：
+- 原 UDF 都是一个 `evaluate(Text... args)` 变参方法，按参数个数分支。StarRocks Java UDF 支持变参：声明 `(string, ...)`，方法 `evaluate(String... args)`，所以每个函数一个类、一次注册。
+- StarRocks 的两个限制：变参函数至少要有一个固定参数；一个 UDF 类只能有一个 `evaluate`。所以 `gl_now()` 的零参数形式单独注册。其它函数的零参数调用在 Hive 返回 NULL，在 StarRocks 报“找不到函数签名”（实际 SQL 不会这样写）。
+- 入参是 DATE/DATETIME 列时，StarRocks 会隐式转成 `yyyy-MM-dd` / `yyyy-MM-dd HH:mm:ss` 字符串，与 Hive 一致；数字参数（如 `gl_date_delta(d, 3)`）同样转成字符串。
+- **正式版**（`com.glbk.starrocks.udf` + `core/GlDates`）：用 `java.time` 重写，按墙上时间计算，结果与 JVM 时区和 Locale 无关（`gl_now` 除外），线程安全，不往 stdout/stderr 打印。
+- **对账版**（`com.glbk.starrocks.udf.hive`）：调用原样复制的 `com.glbk.utils.date.DateUtils`，唯一改动是所有 `Calendar` 和 `SimpleDateFormat` 固定为 `Locale.US`（文件头注释列明了改动）。原因：JDK 9+ 默认用 CLDR 区域数据，zh_CN 的周首日变成周一，而原 jar 时代的 JDK 8 是周日；不固定的话 BE 的 `LANG` 和 JDK 版本会改变周相关结果。Hive 里 `result.set(null)` 会抛 NPE 让查询失败，`HiveTextCompat` 复现了这一点。
+
+## 正式版的语义
+
+**输入日期**：去掉空格、`-`、`:` 后必须是 8 位（`yyyyMMdd`）或 14 位（`yyyyMMddHHmmss`）数字，并且是真实存在的日期时间（严格校验）。只接受这 4 种写法，`2019-1-7` 这类不补零的写法不接受。
+
+**非法输入**：
+
+| 情况 | 结果 |
+|---|---|
+| 日期为 NULL | NULL |
+| 日期非法（`20191332`、`abc`、空串等），或设置值对该日期不存在（4 月 `d=31`、非闰年 `m=2,d=29`） | NULL |
+| 参数写错：未知的 dtype / interval / offsets 单位，offsets 格式错，设置值越界（`m=13`、`h=24`、`d=0`），dtype/interval 为 NULL 或空，非法 format | 报错（`IllegalArgumentException`，消息里写明函数名和错误的值），查询失败 |
+
+dtype / interval / 单位名区分大小写，与原版相同：`year|y`、`quarter|q`、`month|m`、`week|w`、`day|d`、`hour|h`、`minute|n`、`second|s`。
+
+**各函数**：
+- `gl_date_delta(date, offsets[, format])`：offsets 写法与原版相同（`+3`、`day=+3`、`y=+1,m=1,d=1,d=-1`）。带 `+`/`-` 是加减（月份加减在月末收敛，1 月 31 日加 1 个月是 2 月 28 日）；不带符号是设置，`h` 按 24 小时制。年、月、日的设置像原版一样合并后再判断，所以常用写法 `m=3,d=1` 在 1 月 31 日也能得到 3 月 1 日。format 为空时输出与输入同样的格式。只传 1 个参数时原样返回。
+- `gl_date_diff(date1, date2[, interval])` = date1 − date2，默认 `day`。quarter 按自然季度，week 按周日开头的周，day 按日历日期，hour/minute/second 按截断到该单位的墙上时间相减。
+- `gl_how_many_day`：year→年内第几天，quarter→季内第几天，month→月内第几天，week→周日为 1、周六为 7。
+- `gl_date_first` / `gl_date_last`：year/quarter/month/week 的第一天、最后一天（周日到周六），输出 `yyyyMMdd`。
+- `gl_date_format(date[, format])`：默认 `yyyyMMdd`。`gl_now([format])`：当前时间（BE JVM 时区），默认 `yyyyMMdd`。格式串按 `SimpleDateFormat` 规则，Locale.US。
+
+## 与 Hive 的差异（正式版）
+
+| 类别 | 例子 | Hive 原版 | 正式版 |
 |---|---|---|---|
-| `gl_date_delta(date, offsets[, format])` (`com.glbk.hive.udf.date.gl_date_delta`) | `gl_date_delta(string, ...)` | `com.glbk.starrocks.udf.GlDateDelta` | string |
-| `gl_date_diff(date1, date2[, interval])` | `gl_date_diff(string, ...)` | `GlDateDiff` | string |
-| `gl_date_format(date[, format])` | `gl_date_format(string, ...)` | `GlDateFormat` | string |
-| `gl_now([format])` | `gl_now()` 和 `gl_now(string, ...)` | `GlNowNoArg` / `GlNow` | string |
-| `gl_how_many_day(date, dtype)` | `gl_how_many_day(string, ...)` | `GlHowManyDay` | string |
-| `gl_date_first(date, dtype)` | `gl_date_first(string, ...)` | `GlDateFirst` | string |
-| `gl_date_last(date, dtype)` | `gl_date_last(string, ...)` | `GlDateLast` | string |
+| 季度差值 | `gl_date_diff('2019-04-01','2019-03-31','quarter')` | 0（按 `月/4` 计算） | 1 |
+| 周差值跨年 | `gl_date_diff('2019-01-01','2018-12-31','week')`（同一周） | 52（`年×52` 公式） | 0 |
+| 小时设置 | `gl_date_delta('2019-04-17 15:00:00','h=13')` | `2019-04-18 01:00:00`（12 小时制） | `2019-04-17 13:00:00` |
+| 按天差值 | `gl_date_diff('2019-04-17 07:00:00','2019-04-16 09:00:00','day')`（东八区） | 0（按 UTC 毫秒整除） | 1 |
+| 季内第几天 | `gl_how_many_day(...,'quarter')` | 只在有夏令时的时区可能差 1（东八区无影响） | 按日历日 |
+| 非法日期 | `gl_date_format('20191332','yyyy-MM-dd')` | `2020-02-01`（宽松滚动） | NULL |
+| 无法解析的日期 | `gl_date_format('abc')`、空串 | 报错 | NULL |
+| 越界设置值 | `gl_date_delta('20190417','m=13')` | `20200117`（滚动） | 报错 |
+| 未知 interval | `gl_date_diff('20190417','20190416','xx')` | `86400000`（毫秒差） | 报错 |
+| 其它 | 1970 年前的时分秒差、夏令时附近、值两侧空格、年份超出 1..9999 | 见 [samples/README.md](samples/README.md) | |
 
-实现方式：
-- 原 UDF 都是 `evaluate(Text... args)` 一个变参方法，内部按参数个数分支。StarRocks Java UDF 支持变参（声明 `(string, ...)`，方法 `evaluate(String... args)`），所以每个函数一个类、一次注册，分支逻辑逐行照搬。
-- 两处 StarRocks 约束：变参函数至少要有一个固定参数；一个 UDF 类只能有一个 `evaluate`。因此 `gl_now()` 零参数形式单独用 `GlNowNoArg` 注册。
-- 日期计算 `com.glbk.utils.date.DateUtils` / `StringUtils` **逐字复制**原源码（sha256 与原文件一致），不做任何修改。
-- Hive 里 `result.set(null)` 会抛 NPE 导致查询失败（例如未知的 dtype）。`HiveTextCompat.set` 复现了这一点：同样抛错，而不是悄悄返回 NULL。
-- 入参是 DATE/DATETIME 列时，StarRocks 会隐式转成 `yyyy-MM-dd` / `yyyy-MM-dd HH:mm:ss` 字符串，与 Hive 的隐式转换一致；数字参数（如 `gl_date_delta(d, 3)`）同样会转成字符串。
+完整的逐条对比见 [samples/samples.csv](samples/samples.csv)（214 条，含每条差异的类别）。
 
-## 构建、注册、使用
+## 构建、注册、部署要求
 
 ```bash
 cd contrib/glbk-hive-udf-compat
 mvn -B package          # 生成 target/glbk-hive-udf-compat-1.0.0.jar，并跑全部测试
 ```
 
-1. `fe.conf` 中设置 `enable_udf = true` 并重启 FE。
-2. 把 jar 放到所有 FE、BE 都能访问的 HTTP 地址。
-3. 替换 [sql/register.sql](sql/register.sql) 里的 `${JAR_URL}` 后执行（用 `CREATE GLOBAL FUNCTION`，所有库可用）。
-4. 原有 SQL 直接运行，例如 `SELECT gl_date_delta('2018-09-06','y=+1,m=1,d=1,d=-1');` 返回 `2018-12-31`。
-
-Hive 作业脚本里的 `create temporary function gl_xxx as 'com.glbk.hive.udf.date.gl_xxx' using jar ...` 在 StarRocks 上不需要也不能执行：全局函数已注册。Spark 方言落地后（见 `handbook/plans/active/2026-11-05-spark-sql-compat/03-function-adapter.md` 的 L4），计划把这类语句按类名映射为 no-op，脚本可以原样保留。
+1. `fe.conf`：`enable_udf = true`，重启 FE。
+2. `be.conf` 的 `JAVA_OPTS` 加 `-Duser.timezone=Asia/Shanghai`（`gl_now` 和对账版都用 BE JVM 的时区，不读会话的 `time_zone`）。
+3. jar 的 class 版本不能高于 17（`pom.xml` 已设 `release 8`）；用 JDK 21 默认编译的 jar 会被 FE 拒绝。
+4. 把 jar 放到所有 FE、BE 都能访问的 HTTP 地址，替换 [sql/register.sql](sql/register.sql) 里的 `${JAR_URL}` 后执行。它会注册两套共 16 个全局函数。
+5. Hive 脚本里的 `create temporary function ... using jar ...` 在 StarRocks 上不需要，也执行不了，迁移时要从脚本里去掉（本次不做自动处理）。
 
 ## 验证
 
-| 测试 | 内容 |
-|---|---|
-| `DifferentialTest` | 用测试桩（`Text`、`UDF`、`Description`、pdk 注解）把**原始 Hive UDF 源码原样编译**，与 StarRocks 版在同一组输入上逐一比对：值相同、同为 NULL、或同样抛错。输入覆盖 4 种日期格式、闰年/月末/年末、DST 切换时刻、1970 前、非法日期、空串、NULL，27 种 offsets（含非法单位、非法数字、空格、尾逗号），10 种 format（含非法格式），各种 dtype/interval（含未知值、大写、NULL），以及 0 到 4 个参数的全部组合；每组在 Asia/Shanghai、UTC、America/New_York 三个 JVM 时区下各跑一遍，共约 85 万次比对。 |
-| `ReadmeExamplesTest` | 原 README 中的全部示例。 |
-| 变异测试 | 把“未知 dtype 抛错”改成“返回 NULL”后，`DifferentialTest` 立即失败，确认比对是有效的。 |
-
-`mvn -B test`：21 个测试全部通过（JDK 21，Maven 3）。
-
-**尚未验证**：在真实 StarRocks 集群上注册并执行（本环境没有集群）。特别是零参数 Java UDF `gl_now()` 在 BE 上的执行 [未验证]。
-
-## 原 UDF 的行为特点（已原样保留）
-
-以下行为在 Hive 上就是如此，移植版**刻意保持一致**。如果要修正，需要单独决策（会造成两边结果不同）。
-
-| # | 行为 | 例子（实测） |
+| 测试 | 内容 | 结果 |
 |---|---|---|
-| 1 | **周相关结果依赖 JVM 默认 Locale**（周首日） | `gl_date_first('20190417','week')`：en_US 得 `20190414`；zh_CN/de_DE 得 `20190421`，比 `gl_date_last` 的 `20190420` 还晚。`gl_date_diff(...,'week')` 同样受影响 |
-| 2 | **JDK 版本也会改变第 1 条**：JDK 9+ 默认使用 CLDR 区域数据，zh_CN 周首日为周一；JDK 8 及以前为周日 | 原 jar 时代多跑在 JDK 7/8 上，StarRocks BE 用 JDK 17 |
-| 3 | 依赖 JVM 默认时区（不是 StarRocks 会话的 `time_zone`） | 解析、`gl_now`、`Calendar` 计算都用 BE JVM 的时区 |
-| 4 | 按天/小时的差值用 UTC 毫秒整除，在非 UTC 时区跨日会差 1 | Asia/Shanghai：`gl_date_diff('2019-04-17 07:00:00','2019-04-16 09:00:00','day')` = `0` |
-| 5 | quarter 差值实际用 `月份/4` 计算（原代码 bug） | `gl_date_diff('2019-04-01','2019-03-31','quarter')` = `0`；`('2019-05-01','2019-03-31','quarter')` = `1` |
-| 6 | `hour`/`h` 用的是 12 小时制字段 `Calendar.HOUR` | `gl_date_delta('2019-04-17 15:00:00','h=13')` = `2019-04-18 01:00:00` |
-| 7 | 宽松解析：非法日期会滚动，不报错 | `gl_date_format('20191332','yyyy-MM-dd')` = `2020-02-01` |
-| 8 | 无法解析的日期（如 `2019-1-7`、`abc`、空串）、未知 dtype、非法 offsets → 抛错，查询失败；解析失败还会向 stderr 打印堆栈（BE 的 `be.out`） | |
-| 9 | 结果都是 **STRING**，不是 DATE/DATETIME | |
-| 10 | 原 README 的两处错误：`gl_date_diff('20170101','20180201','month')` 实际是 `-13`（README 写 `-12`）；`@Description` 里写的 `'31'` 实际是 `-31`（date1 − date2） | |
-| 11 | `gl_now()` 在 Hive 中可能被编译期常量折叠（UDF 默认 deterministic）；StarRocks Java UDF 按行求值，跨午夜的长查询可能不同行得到不同日期 | |
+| 单元测试 `mvn -B test` | 112 个：规则测试、环境无关性（时区、Locale、并发、无输出）、UDF 类约束、对账版差分、正式版“预期差异”差分、样本生成 | 全部通过（JDK 21） |
+| 对账版差分 `hive/DifferentialTest` | 测试桩把**原始 Hive UDF 源码原样编译**作为参照（Locale.US），对账版在 en_US、zh_CN、de_DE、ar_SA 四种默认 Locale × 3 个时区下必须逐条一致 | 0 差异 |
+| 正式版差分 `ExpectedDifferenceTest` | 约 270 万次比对：每处与原版不同的结果都必须能归入上表某个已同意的修复类别，归不进去就失败；某个类别一次都没出现也失败 | 0 处无法解释的差异 |
+| 变异测试 | 撤掉一处 Locale.US、或把季度 bug 改回去，相关测试立即失败 | 有效 |
+| 端到端 [e2e/](e2e/README.md) | 真实 StarRocks 4.0.17 单机集群（本仓库 docker 环境，BE JDK 17、Asia/Shanghai）：正式版 `samples.csv` 214/214，对账版 `samples_hive.csv` 214/214，冒烟用例 16/16，零参数 `gl_now()` 可执行 | 全部通过 |
+
+## 已知问题
+
+- **对账版在 WHERE 里遇到有 NULL 行的可空 STRING 列会报错**：StarRocks 会在列字典上对谓词求值，字典里用空串占位 NULL，而原版遇到空串会抛错（在 Hive 上 NULL 会被跳过，没有这个问题）。规避：会话里 `SET enable_column_expr_predicate = false`，或只在 SELECT 列表里用。正式版遇到空串返回 NULL，不受影响。详见 [e2e/README.md](e2e/README.md) 第三节。
+- `gl_now()` 在 Hive 中可能被编译期常量折叠；StarRocks Java UDF 按行求值，跨午夜的长查询里不同行可能得到不同日期。
 
 ## 性能提示
 
-Java UDF 走 JNI 逐批调用，每次调用都会新建 `SimpleDateFormat`/`Calendar`；BE 的 `udf_thread_pool_size` 默认 1。大表上如果成为瓶颈，可以对**常量参数、格式规整**的调用改写成 StarRocks 内置函数（例如 `gl_date_first(d,'month')` → `date_format(date_trunc('month', d), '%Y%m%d')`），但非法输入、Locale/时区相关的行为会和 Hive 不同，需要逐个评估。
+Java UDF 走 JNI 逐批调用；BE 的 `udf_thread_pool_size` 默认 1。大表上如果成为瓶颈，可以对常量参数的调用改写成 StarRocks 内置函数组合（例如 `gl_date_first(d,'month')` → `date_format(date_trunc('month', d), '%Y%m%d')`），但对非法输入的处理会不同，需要逐个评估。

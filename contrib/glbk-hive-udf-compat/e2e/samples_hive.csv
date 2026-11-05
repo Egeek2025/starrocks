@@ -1,0 +1,215 @@
+sql,expected
+SELECT gl_date_delta_hive('20190417'),20190417
+SELECT gl_date_delta_hive('2019-1-7'),2019-1-7
+"SELECT gl_date_delta_hive('20190417','+1','yyyyMMdd','extra')",NULL
+"SELECT gl_date_delta_hive(NULL,'+1')",NULL
+"SELECT gl_date_delta_hive('20190417','+1')",20190418
+"SELECT gl_date_delta_hive('2019-04-17','+1')",2019-04-18
+"SELECT gl_date_delta_hive('20190417030405','+1')",20190418030405
+"SELECT gl_date_delta_hive('2019-04-17 03:04:05','+1')",2019-04-18 03:04:05
+"SELECT gl_date_delta_hive('20190417',NULL)",20190417
+"SELECT gl_date_delta_hive('2019-04-17 03:04:05','   ')",2019-04-17 03:04:05
+"SELECT gl_date_delta_hive('20190417','-1')",20190416
+"SELECT gl_date_delta_hive('20190417','5')",20190405
+"SELECT gl_date_delta_hive('20190417','0')",20190331
+"SELECT gl_date_delta_hive('20190417','32')",20190502
+"SELECT gl_date_delta_hive('2018-09-06','y=+1,m=1,d=1,d=-1')",2018-12-31
+"SELECT gl_date_delta_hive('20180102030405','day=+3')",20180105030405
+"SELECT gl_date_delta_hive('2018-01-02','day=+3','yyyyMMdd')",20180105
+"SELECT gl_date_delta_hive('20190417','month=+1,day=1,day=-1')",20190430
+"SELECT gl_date_delta_hive('2019-04-17 15:00:00','h=13')",2019-04-18 01:00:00
+"SELECT gl_date_delta_hive('20190417','year=+2')",20210417
+"SELECT gl_date_delta_hive('20190417','m=-4')",20181217
+"SELECT gl_date_delta_hive('2019-04-17 03:04:05','hour=+30')",2019-04-18 09:04:05
+"SELECT gl_date_delta_hive('2019-04-17 03:04:05','n=+90')",2019-04-17 04:34:05
+"SELECT gl_date_delta_hive('2019-04-17 03:04:05','second=+86400')",2019-04-18 03:04:05
+"SELECT gl_date_delta_hive('20190131','m=+1')",20190228
+"SELECT gl_date_delta_hive('20200229','y=+1')",20210228
+"SELECT gl_date_delta_hive('20190417','y=2020')",20200417
+"SELECT gl_date_delta_hive('20190417','m=2')",20190217
+"SELECT gl_date_delta_hive('20190417','d=1')",20190401
+"SELECT gl_date_delta_hive('2019-04-17 03:04:05','h=0')",2019-04-17 00:04:05
+"SELECT gl_date_delta_hive('2019-04-17 03:04:05','h=23')",2019-04-17 23:04:05
+"SELECT gl_date_delta_hive('2019-04-17 03:04:05','n=30,s=15')",2019-04-17 03:30:15
+"SELECT gl_date_delta_hive('2019-04-17 15:00:00','h=5')",2019-04-17 17:00:00
+"SELECT gl_date_delta_hive('2019-04-17 03:00:00','h=17')",2019-04-17 17:00:00
+"SELECT gl_date_delta_hive('20190417','m=13')",20200117
+"SELECT gl_date_delta_hive('20190417','m=0')",20181217
+"SELECT gl_date_delta_hive('20190417','d=32')",20190502
+"SELECT gl_date_delta_hive('2019-04-17 03:04:05','h=24')",2019-04-18 00:04:05
+"SELECT gl_date_delta_hive('2019-04-17 03:04:05','n=60')",2019-04-17 04:00:05
+"SELECT gl_date_delta_hive('20190417','d=31')",20190501
+"SELECT gl_date_delta_hive('20200229','y=2019')",20190301
+"SELECT gl_date_delta_hive('20190131','m=2')",20190303
+"SELECT gl_date_delta_hive('20190131','m=2,d=1')",20190201
+"SELECT gl_date_delta_hive('99991231','+1')",100000101
+"SELECT gl_date_delta_hive('20190417','x=1')",ERROR
+"SELECT gl_date_delta_hive('20190417','Y=1')",ERROR
+"SELECT gl_date_delta_hive('20190417','quarter=1')",ERROR
+"SELECT gl_date_delta_hive('20190417','day=1,,month=1')",ERROR
+"SELECT gl_date_delta_hive('20190417','day=abc')",ERROR
+"SELECT gl_date_delta_hive('20190417','day')",ERROR
+"SELECT gl_date_delta_hive('20190417','+3,+4')",ERROR
+"SELECT gl_date_delta_hive('20190417','day=1=2')",20190401
+"SELECT gl_date_delta_hive('20190417',' day = +3 ')",ERROR
+"SELECT gl_date_delta_hive('20190417','day=+3,')",20190420
+"SELECT gl_date_delta_hive('2019-1-7','+1')",ERROR
+"SELECT gl_date_delta_hive('20191332','+1')",20200202
+"SELECT gl_date_delta_hive('abc','+1')",ERROR
+"SELECT gl_date_delta_hive('','+1')",ERROR
+"SELECT gl_date_delta_hive('2019/04/17','+1')",ERROR
+"SELECT gl_date_delta_hive('20190230','+1')",20190303
+"SELECT gl_date_delta_hive('20190417','+1','yyyy-MM-dd')",2019-04-18
+"SELECT gl_date_delta_hive('20190417','+1','EEE, d MMM yyyy')","Thu, 18 Apr 2019"
+"SELECT gl_date_delta_hive('20190417','+1','yyyy-MM-dd HH:mm')",2019-04-18 00:00
+"SELECT gl_date_delta_hive('20190417','+1','')",20190418
+"SELECT gl_date_delta_hive('2019-04-17 03:04:05','+1',' ')",2019-04-18 03:04:05
+"SELECT gl_date_delta_hive('20190417','+1',NULL)",ERROR
+"SELECT gl_date_delta_hive('20190417','+1','bad''')",ERROR
+SELECT gl_date_diff_hive(),ERROR
+SELECT gl_date_diff_hive('20190417'),NULL
+"SELECT gl_date_diff_hive('20190417','20190416','day','x')",NULL
+"SELECT gl_date_diff_hive('20180101','20180201')",-31
+"SELECT gl_date_diff_hive('2018-02-01','2018-01-01')",31
+"SELECT gl_date_diff_hive(NULL,'20190417')",NULL
+"SELECT gl_date_diff_hive('20190417',NULL,'day')",NULL
+"SELECT gl_date_diff_hive('20170101','20180201','month')",-13
+"SELECT gl_date_diff_hive('20190101','20181231','year')",1
+"SELECT gl_date_diff_hive('20190101','20181231','y')",1
+"SELECT gl_date_diff_hive('20190201','20190131','m')",1
+"SELECT gl_date_diff_hive('2019-04-01','2019-03-31','quarter')",0
+"SELECT gl_date_diff_hive('2019-05-01','2019-03-31','quarter')",1
+"SELECT gl_date_diff_hive('2019-06-30','2019-04-01','q')",1
+"SELECT gl_date_diff_hive('2020-01-01','2019-12-31','q')",2
+"SELECT gl_date_diff_hive('2019-12-31','2019-01-01','q')",2
+"SELECT gl_date_diff_hive('20190417','20190414','week')",0
+"SELECT gl_date_diff_hive('20190421','20190420','w')",1
+"SELECT gl_date_diff_hive('20190101','20181229','w')",1
+"SELECT gl_date_diff_hive('20190101','20181230','w')",52
+"SELECT gl_date_diff_hive('20191231','20190101','w')",0
+"SELECT gl_date_diff_hive('20200615','20190615','w')",53
+"SELECT gl_date_diff_hive('20190415','20181231','week')",67
+"SELECT gl_date_diff_hive('20200101','20190101','w')",52
+"SELECT gl_date_diff_hive('2021-01-03','2021-01-02','week')",1
+"SELECT gl_date_diff_hive('2019-04-17 07:00:00','2019-04-16 09:00:00','day')",0
+"SELECT gl_date_diff_hive('2019-04-17 00:00:00','2019-04-16 23:59:59','d')",0
+"SELECT gl_date_diff_hive('2019-04-17 23:59:59','2019-04-17 00:00:00','d')",1
+"SELECT gl_date_diff_hive('20200101','20190101','d')",365
+"SELECT gl_date_diff_hive('2019-04-17 03:00:00','2019-04-17 02:59:59','hour')",1
+"SELECT gl_date_diff_hive('2019-04-18 03:10:00','2019-04-17 02:50:00','h')",25
+"SELECT gl_date_diff_hive('2019-04-17 03:05:00','2019-04-17 03:04:59','minute')",1
+"SELECT gl_date_diff_hive('2019-04-17 03:05:59','2019-04-17 03:05:00','n')",0
+"SELECT gl_date_diff_hive('2019-04-17 03:05:01','2019-04-17 03:05:00','second')",1
+"SELECT gl_date_diff_hive('20190418','20190417','s')",86400
+"SELECT gl_date_diff_hive('1969-12-31 23:30:00','1969-12-31 22:00:00','h')",2
+"SELECT gl_date_diff_hive('1969-12-31 23:59:59','1969-12-31 00:00:00','d')",1
+"SELECT gl_date_diff_hive('1988-04-17 04:00:00','1988-04-17 01:00:00','h')",2
+"SELECT gl_date_diff_hive('20190417','20190416','xx')",86400000
+"SELECT gl_date_diff_hive('20190417','20190416','DAY')",86400000
+"SELECT gl_date_diff_hive('20190417','20190416','')",86400000
+"SELECT gl_date_diff_hive('20190417','20190416',NULL)",ERROR
+"SELECT gl_date_diff_hive('abc','20190416','day')",ERROR
+"SELECT gl_date_diff_hive('20190417','20191332','month')",-10
+"SELECT gl_date_diff_hive('2019-1-7','20190416')",ERROR
+SELECT gl_date_format_hive(),ERROR
+"SELECT gl_date_format_hive('20190417','yyyy','x')",NULL
+SELECT gl_date_format_hive(NULL),NULL
+SELECT gl_date_format_hive('2019-04-17 03:04:05'),20190417
+"SELECT gl_date_format_hive('20190417','yyyy-MM-dd')",2019-04-17
+"SELECT gl_date_format_hive('20190417030405','yyyy-MM-dd HH:mm:ss')",2019-04-17 03:04:05
+"SELECT gl_date_format_hive('2019-04-17 03:04:05','yyyyMMddHHmmss')",20190417030405
+"SELECT gl_date_format_hive('20190417','EEEE, MMMM d, yyyy')","Wednesday, April 17, 2019"
+"SELECT gl_date_format_hive('20190417','yyyy-ww')",2019-16
+"SELECT gl_date_format_hive('20191229','yyyy-ww')",2019-01
+"SELECT gl_date_format_hive('20190417150405','hh:mm a')",03:04 PM
+"SELECT gl_date_format_hive('20190417','')",
+"SELECT gl_date_format_hive('20191332','yyyy-MM-dd')",2020-02-01
+SELECT gl_date_format_hive('20191332'),20200201
+SELECT gl_date_format_hive('abc'),ERROR
+"SELECT gl_date_format_hive('','yyyy')",ERROR
+SELECT gl_date_format_hive('2019-1-7'),ERROR
+SELECT gl_date_format_hive('2019/04/17'),ERROR
+"SELECT gl_date_format_hive('1988-04-17 02:30:00','yyyy-MM-dd HH:mm:ss')",1988-04-17 03:30:00
+"SELECT gl_date_format_hive('20190417',NULL)",ERROR
+"SELECT gl_date_format_hive('20190417','bad''')",ERROR
+"SELECT gl_date_format_hive('20190417','yyyy-MM-dd bbb')",ERROR
+SELECT gl_now_hive('bad'''),ERROR
+SELECT gl_how_many_day_hive('20190417'),NULL
+"SELECT gl_how_many_day_hive(NULL,'year')",NULL
+"SELECT gl_how_many_day_hive('2019-04-17','year')",107
+"SELECT gl_how_many_day_hive('2019-04-17','y')",107
+"SELECT gl_how_many_day_hive('2019-04-17','quarter')",17
+"SELECT gl_how_many_day_hive('2019-04-17','q')",17
+"SELECT gl_how_many_day_hive('2019-04-17','month')",17
+"SELECT gl_how_many_day_hive('2019-04-17','m')",17
+"SELECT gl_how_many_day_hive('2019-04-17','week')",4
+"SELECT gl_how_many_day_hive('2019-04-17','w')",4
+"SELECT gl_how_many_day_hive('20190101','year')",1
+"SELECT gl_how_many_day_hive('20201231','y')",366
+"SELECT gl_how_many_day_hive('20190401','quarter')",1
+"SELECT gl_how_many_day_hive('20190331','quarter')",90
+"SELECT gl_how_many_day_hive('20191231','q')",92
+"SELECT gl_how_many_day_hive('2019-03-19 23:59:59','quarter')",78
+"SELECT gl_how_many_day_hive('1969-12-31 23:00:00','quarter')",92
+"SELECT gl_how_many_day_hive('20190531','month')",31
+"SELECT gl_how_many_day_hive('20190414','week')",1
+"SELECT gl_how_many_day_hive('20190420','w')",7
+"SELECT gl_how_many_day_hive('20191332','year')",32
+"SELECT gl_how_many_day_hive('abc','month')",ERROR
+"SELECT gl_how_many_day_hive('20190417','day')",0
+"SELECT gl_how_many_day_hive('20190417','YEAR')",0
+"SELECT gl_how_many_day_hive('20190417','')",0
+"SELECT gl_how_many_day_hive('20190417',NULL)",ERROR
+"SELECT gl_how_many_day_hive('20190417','year','x')",NULL
+SELECT gl_date_first_hive('20190417'),NULL
+"SELECT gl_date_first_hive(NULL,'year')",NULL
+"SELECT gl_date_first_hive('2019-04-17 12:00:00','year')",20190101
+"SELECT gl_date_first_hive('2019-04-17 12:00:00','y')",20190101
+"SELECT gl_date_first_hive('2019-04-17 12:00:00','quarter')",20190401
+"SELECT gl_date_first_hive('2019-04-17 12:00:00','q')",20190401
+"SELECT gl_date_first_hive('2019-04-17 12:00:00','month')",20190401
+"SELECT gl_date_first_hive('2019-04-17 12:00:00','m')",20190401
+"SELECT gl_date_first_hive('2019-04-17 12:00:00','week')",20190414
+"SELECT gl_date_first_hive('2019-04-17 12:00:00','w')",20190414
+"SELECT gl_date_first_hive('20190930','quarter')",20190701
+"SELECT gl_date_first_hive('20200215','month')",20200201
+"SELECT gl_date_first_hive('20190215','m')",20190201
+"SELECT gl_date_first_hive('20190414','week')",20190414
+"SELECT gl_date_first_hive('20190420','week')",20190414
+"SELECT gl_date_first_hive('20190101','week')",20181230
+"SELECT gl_date_first_hive('20181230','w')",20181230
+"SELECT gl_date_first_hive('99991231','week')",99991226
+"SELECT gl_date_first_hive('20191332','month')",20200201
+"SELECT gl_date_first_hive('abc','year')",ERROR
+"SELECT gl_date_first_hive('','month')",ERROR
+"SELECT gl_date_first_hive('20190417','day')",ERROR
+"SELECT gl_date_first_hive('20190417','Month')",ERROR
+"SELECT gl_date_first_hive('20190417','')",ERROR
+"SELECT gl_date_first_hive('20190417',NULL)",ERROR
+"SELECT gl_date_first_hive('20190417','year','x')",NULL
+SELECT gl_date_last_hive('20190417'),NULL
+"SELECT gl_date_last_hive(NULL,'year')",NULL
+"SELECT gl_date_last_hive('2019-04-17 12:00:00','year')",20191231
+"SELECT gl_date_last_hive('2019-04-17 12:00:00','y')",20191231
+"SELECT gl_date_last_hive('2019-04-17 12:00:00','quarter')",20190630
+"SELECT gl_date_last_hive('2019-04-17 12:00:00','q')",20190630
+"SELECT gl_date_last_hive('2019-04-17 12:00:00','month')",20190430
+"SELECT gl_date_last_hive('2019-04-17 12:00:00','m')",20190430
+"SELECT gl_date_last_hive('2019-04-17 12:00:00','week')",20190420
+"SELECT gl_date_last_hive('2019-04-17 12:00:00','w')",20190420
+"SELECT gl_date_last_hive('20190930','quarter')",20190930
+"SELECT gl_date_last_hive('20200215','month')",20200229
+"SELECT gl_date_last_hive('20190215','m')",20190228
+"SELECT gl_date_last_hive('20190414','week')",20190420
+"SELECT gl_date_last_hive('20190420','week')",20190420
+"SELECT gl_date_last_hive('20190101','week')",20190105
+"SELECT gl_date_last_hive('20181230','w')",20190105
+"SELECT gl_date_last_hive('99991231','week')",100000101
+"SELECT gl_date_last_hive('20191332','month')",20200229
+"SELECT gl_date_last_hive('abc','year')",ERROR
+"SELECT gl_date_last_hive('','month')",ERROR
+"SELECT gl_date_last_hive('20190417','day')",ERROR
+"SELECT gl_date_last_hive('20190417','Month')",ERROR
+"SELECT gl_date_last_hive('20190417','')",ERROR
+"SELECT gl_date_last_hive('20190417',NULL)",ERROR
+"SELECT gl_date_last_hive('20190417','year','x')",NULL

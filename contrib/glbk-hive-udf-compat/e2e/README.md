@@ -12,7 +12,9 @@
 | `run_e2e.sh` | 构建 jar、起 HTTP 服务、渲染并执行 `sql/register.sql`、跑 CSV 检查 |
 | `e2e_runner.py` | 实际的注册与检查逻辑（pymysql，不需要 mysql 客户端） |
 | `smoke.csv` + `smoke_setup.sql` | 冒烟用例（README 示例、`gl_now()`、NULL、多行表） |
-| `known_issues.csv` | 复现下文“已知坑 1”的用例（需 `--set enable_column_expr_predicate=false`） |
+| `known_issues.csv` | 下文“已知坑 1”的用例：对正式版 `gl_*` 直接通过；把函数名换成 `gl_*_hive` 后需 `--set enable_column_expr_predicate=false` |
+| `make_hive_csv.py` | 由 `../samples/samples.csv` 生成对账版用例 `samples_hive.csv`（SQL 改调 `gl_*_hive`，期望值取 `hive_result`） |
+| `samples_hive.csv` | 对账版 `gl_*_hive` 的端到端用例（214 条） |
 
 ## 一、启动集群
 
@@ -71,7 +73,7 @@ CSV 规则：列名默认 `sql` 和 `new_result`（`--sql-col`、`--expected-col
 
 ## 三、实测发现（给后续改动的人）
 
-1. **WHERE 里对“可空字符串列”调用会抛错的 UDF，可能整条查询失败。** 例如 `SELECT ... FROM t WHERE gl_date_delta(d,'day=+1')='20180102'`，`d` 为可空 STRING 且有 NULL 行时，报 `NullPointerException: date must not be null`（be.INFO 栈里是 `column_predicate_rewriter.cpp` → `ColumnExprPredicate`）。原因是 BE 把谓词下推到字典上求值，字典里有 NULL 行占位的空串，而 `gl_*` 对空串按 Hive 行为抛错。同一表上 SELECT 列表里用没问题（NULL 入参返回 NULL）。列是 NOT NULL，或会话里 `SET enable_column_expr_predicate = false`，就正常。用 `known_issues.csv` 可复现（不加 `--set` 失败，加了通过）。同一个探针 UDF（对空串不抛错）在 WHERE 里正常，说明这不是 NULL 传参框架问题，而是“空串抛错”和字典谓词求值的叠加。
+1. **（只影响对账版 `gl_*_hive`；正式版 `gl_*` 已不受影响，`known_issues.csv` 现在对 `gl_*` 直接通过）WHERE 里对“可空字符串列”调用会抛错的 UDF，可能整条查询失败。** 例如 `SELECT ... FROM t WHERE gl_date_delta(d,'day=+1')='20180102'`，`d` 为可空 STRING 且有 NULL 行时，报 `NullPointerException: date must not be null`（be.INFO 栈里是 `column_predicate_rewriter.cpp` → `ColumnExprPredicate`）。原因是 BE 把谓词下推到字典上求值，字典里有 NULL 行占位的空串，而 `gl_*` 对空串按 Hive 行为抛错。同一表上 SELECT 列表里用没问题（NULL 入参返回 NULL）。列是 NOT NULL，或会话里 `SET enable_column_expr_predicate = false`，就正常。用 `known_issues.csv` 可复现（不加 `--set` 失败，加了通过）。同一个探针 UDF（对空串不抛错）在 WHERE 里正常，说明这不是 NULL 传参框架问题，而是“空串抛错”和字典谓词求值的叠加。
 2. **jar 的字节码版本不能高于 17**：FE/BE 的 JVM 是 17，用 JDK 21 默认参数编译的类会报 `compiled by a more recent version ... class file version 65.0`。模块 `pom.xml` 当前是 `maven.compiler.release=8`，注册和执行均成功；不要去掉这个设置。
 3. 零参数 Java UDF `gl_now()` 在 BE 上可以注册并执行（返回 8 位字符串），见 `smoke.csv`。
 4. 非法输入抛错时，BE 返回的是 `1064 JNI Exception, java.lang.NullPointerException ...`，与 Hive 一样是“查询失败”；CSV 里用 `ERROR` 即可匹配。
