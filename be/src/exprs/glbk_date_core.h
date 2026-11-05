@@ -73,7 +73,15 @@ public:
     std::string format(const DateTime& t) const;
 
 private:
-    struct Token;
+    // kind == 0: literal text; otherwise the SimpleDateFormat pattern letter, repeated `count` times.
+    struct Token {
+        char kind = 0;
+        int count = 0;
+        std::string text;
+    };
+    // 1..4 for the four standard patterns (yyyyMMdd, yyyy-MM-dd, yyyyMMddHHmmss, yyyy-MM-dd HH:mm:ss),
+    // which are formatted without tokens; 0 otherwise.
+    int _fast = 0;
     std::vector<Token> _tokens;
     friend struct PatternAccess;
 };
@@ -87,7 +95,13 @@ public:
     std::optional<DateTime> apply(const DateTime& t) const;
 
 private:
-    struct Op;
+    // unit: index of the glbk unit (year, quarter, month, week, day, hour, minute, second); add: +/- item
+    // versus set item.
+    struct Op {
+        uint8_t unit = 0;
+        bool add = false;
+        int32_t value = 0;
+    };
     std::vector<Op> _ops;
 };
 
