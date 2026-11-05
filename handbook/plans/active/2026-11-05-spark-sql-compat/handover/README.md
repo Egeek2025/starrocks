@@ -47,3 +47,10 @@
 ## 工作量复核
 
 implementation-map 按任务单累计约 355 人天（≈71 人周），低于设计估算的 90 人周（不含缓冲）。差额主要来自设计里的测试基础设施与语义项按更粗粒度估算；建议仍按设计的 ~108 人周（含 20% 缓冲）做预算，在 P0 结束后用实际速度重估。
+
+## 实现进度（2026-11-05，已暂停）
+
+| 部分 | 分支 | 状态 |
+|---|---|---|
+| Spark SQL 方言 | `feature/spark-sql-dialect` | 第一阶段（方言注册机制 + Spark 语法 + 基本查询）编译通过，单测未运行；第二阶段为 WIP 提交，整体编译未确认。交接文档见该分支的 `handbook/plans/active/2026-11-05-spark-sql-dialect-handover.md` |
+| glbk UDF 对齐（Java UDF / SQL UDF / C++ 原生） | 本分支 `contrib/glbk-hive-udf-compat/`、`be/src/exprs/glbk_*` | Java 与 SQL UDF 已在集群上验证；C++ 原生函数的核心算法已验证（255 万条差分 0 差异），BE 接入层待在完整 BE 编译环境中测试，见 `contrib/glbk-hive-udf-compat/IMPLEMENTATION-LOG.md` 第 6 节 |
