@@ -27,6 +27,7 @@
 | [07-roadmap-cost-benefit.md](07-roadmap-cost-benefit.md) | 方案对比、甘特图路线、人力与成本、收益模型、风险、决策建议 |
 | [func_mapping.csv](func_mapping.csv) | 479 个 Spark 函数逐一分类（A/B/C/D/E）、SR 对应、差异、策略、难度 |
 | [research/](research/) | 5 份原始调研报告（parser、函数注册/UDF、大小写、函数差距、先行实践与语义） |
+| [handover/](handover/README.md) | **开发接管手册**：开发流程、FE 查询链路、FE 元数据与平台、BE 执行与函数、58 张代码级任务单（含读码后对设计的 15 处修订） |
 
 ## 关键结论
 
@@ -50,6 +51,7 @@
 - 2026-11-05: Spark 语义函数使用 `spark_` 前缀 builtin 作为改写目标，不覆盖同名 SR 函数。
 - 2026-11-05: `spark_case_sensitive=true` 不实现（报不支持）；Collation 推迟到 P4。
 - 2026-11-05: 语义基线 Spark 3.5（ANSI 默认关），`spark_version=4.0` 作为后续选项。
+- 2026-11-05: 读码后修订（详见 [handover/README.md](handover/README.md) 与 implementation-map §0）：Spark 语法放新模块 `fe-grammar-spark`；大小写回退统一在 `MetadataMgr` 单点实现；数组下标复用 `CollectionElementExpr` 加 0 基标志，不新增节点；`explode(map)` 在分析期按类型改写；语句方言用 fe-parser 中的 `ParsedDialect` 枚举标记。
 
 ## 调研说明
 
