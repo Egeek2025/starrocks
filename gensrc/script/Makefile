@@ -48,6 +48,7 @@ GEN_FUNCTIONS_OUTPUT = ${FE_TARGET_DIR}/com/starrocks/builtins/VectorizedBuiltin
 					${BUILD_DIR}/gen_cpp/opcode/ArrayFunctions.inc \
 					${BUILD_DIR}/gen_cpp/opcode/MapFunctions.inc \
 					${BUILD_DIR}/gen_cpp/opcode/GinFunctions.inc \
+					${BUILD_DIR}/gen_cpp/opcode/GlbkFunctions.inc \
 
 ${GEN_FUNCTIONS_OUTPUT}: functions.py gen_functions.py 
 	${PYTHON} ${CURDIR}/gen_functions.py --cpp ${BUILD_DIR}/gen_cpp  --java ${FE_TARGET_DIR}

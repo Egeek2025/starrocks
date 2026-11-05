@@ -88,6 +88,8 @@ set(EXPR_FILES
   geo_functions.cpp
   h3_functions.cpp
   gin_functions.cpp
+  glbk_date_core.cpp
+  glbk_functions.cpp
   grouping_sets_functions.cpp
   hash_functions.cpp
   http_request_functions.cpp

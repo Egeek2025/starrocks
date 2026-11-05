@@ -9,7 +9,7 @@
 | 正式版 `gl_*`（Java UDF，修复 bug） | 已完成，生产可用 | 3.x / 4.0 / 4.1 | 按约定修复 8 类 bug，其余一致 | 1.3 到 3.5 倍（优化后） |
 | 对账版 `gl_*_hive`（Java UDF，逐条复刻） | 已完成，迁移期使用 | 同上 | 与原 jar 逐条一致 | 与正式版相近 |
 | SQL UDF 版 `gl_*`（内置函数组合 + Java 兜底） | 实验，已验证 | 4.1+ | 与正式版逐条一致 | 1.2 到 2.7 倍；`gl_date_format`/`gl_date_delta` 比 Java 快 1.2 到 2.5 倍 |
-| C++ 原生内置函数 | 待做（见第 6 节） | 需改 fork 并重新编译 BE | 目标与正式版一致 | 预计接近手写内置表达式 |
+| C++ 原生内置函数 | 代码已完成；核心算法已验证，BE 接入待在完整 BE 编译环境中测试（见第 6 节） | 需改 fork 并重新编译 BE | 核心与 Java 正式版逐条一致（255 万条差分 0 差异） | 核心单次调用 20 到 185ns，无 JNI |
 
 ## 2. 实现路径（按时间顺序）
 
@@ -99,7 +99,27 @@
 | 业务方变更说明 | `CHANGES.md` |
 | 端到端与基准 | `e2e/`（`run_e2e.sh`、`bench.py`、`BENCHMARK.md`、`bench_result_*.md`） |
 
-## 6. 下一步：C++ 原生内置函数（待实现）
+## 6. C++ 原生内置函数
+
+**当前状态（代码已提交）**：
+- **核心算法** `be/src/exprs/glbk_date_core.{h,cpp}`：只依赖 C++ 标准库。`contrib/glbk-hive-udf-compat/native/` 是差分测试套件：用 Java 正式版生成参照样本，C++ 版逐条比对。255.7 万条 0 差异，ASan/UBSan 下 22.7 万条 0 差异。
+- **StarRocks 接入层** `be/src/exprs/glbk_functions.{h,cpp}`：
+  - 内置函数 fn_id 400001 到 400006，每个函数注册为变参 `(VARCHAR, ...)`，参数个数的规则和 Java 版一致。
+  - 常量的 format 和 offsets 在函数初始化时预先编译。
+  - 参数写错时，返回 `Status::InvalidArgument`，查询失败。
+- **测试代码已写好，尚未在真实 BE 上运行**：BE 单测 `be/test/exprs/glbk_functions_test.cpp`、SQL 集成测试 `test/sql/test_glbk_functions/`。已做的检查：模块边界检查通过、代码生成脚本接受新函数、用替身头文件编译的单测通过。
+- **待在开发机或 CI 上执行**：
+
+  ```bash
+  ./run-be-ut.sh --build-target expr_test --module expr_test --without-java-ext --gtest_filter 'GlbkFunctionsTest*'
+  ```
+
+  ```bash
+  cd test && python3 run.py -d sql/test_glbk_functions/R/test_glbk_functions -v
+  ```
+- **上线注意**：内置函数优先于 UDF，所以同名的 `gl_*` UDF 要先删掉；`gl_*_hive` 和 `gl_now`（Java）保留。
+
+### 原计划（保留作参考）
 
 目标：把 `gl_*` 实现成 StarRocks 内置函数，向量化执行，常量参数可以由 FE 折叠，性能接近手写内置表达式，语义与正式版逐条一致。实现路径（行号以 fork 基线为准，开工前用 `git grep` 复核；细节见 `handbook/plans/active/2026-11-05-spark-sql-compat/handover/be-execution-functions.md`）：
 

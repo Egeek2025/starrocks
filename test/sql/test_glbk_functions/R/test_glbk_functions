@@ -1,0 +1,1211 @@
+-- name: test_glbk_date_delta_samples
+SELECT gl_date_delta('20190417');
+-- result:
+20190417
+-- !result
+SELECT gl_date_delta('2019-1-7');
+-- result:
+2019-1-7
+-- !result
+SELECT gl_date_delta('20190417','+1','yyyyMMdd','extra');
+-- result:
+None
+-- !result
+SELECT gl_date_delta(NULL,'+1');
+-- result:
+None
+-- !result
+SELECT gl_date_delta('20190417','+1');
+-- result:
+20190418
+-- !result
+SELECT gl_date_delta('2019-04-17','+1');
+-- result:
+2019-04-18
+-- !result
+SELECT gl_date_delta('20190417030405','+1');
+-- result:
+20190418030405
+-- !result
+SELECT gl_date_delta('2019-04-17 03:04:05','+1');
+-- result:
+2019-04-18 03:04:05
+-- !result
+SELECT gl_date_delta('20190417',NULL);
+-- result:
+20190417
+-- !result
+SELECT gl_date_delta('2019-04-17 03:04:05','   ');
+-- result:
+2019-04-17 03:04:05
+-- !result
+SELECT gl_date_delta('20190417','-1');
+-- result:
+20190416
+-- !result
+SELECT gl_date_delta('20190417','5');
+-- result:
+20190405
+-- !result
+SELECT gl_date_delta('20190417','0');
+-- result:
+[REGEX]E: .*gl_date_delta.*
+-- !result
+SELECT gl_date_delta('20190417','32');
+-- result:
+[REGEX]E: .*gl_date_delta.*
+-- !result
+SELECT gl_date_delta('2018-09-06','y=+1,m=1,d=1,d=-1');
+-- result:
+2018-12-31
+-- !result
+SELECT gl_date_delta('20180102030405','day=+3');
+-- result:
+20180105030405
+-- !result
+SELECT gl_date_delta('2018-01-02','day=+3','yyyyMMdd');
+-- result:
+20180105
+-- !result
+SELECT gl_date_delta('20190417','month=+1,day=1,day=-1');
+-- result:
+20190430
+-- !result
+SELECT gl_date_delta('2019-04-17 15:00:00','h=13');
+-- result:
+2019-04-17 13:00:00
+-- !result
+SELECT gl_date_delta('20190417','year=+2');
+-- result:
+20210417
+-- !result
+SELECT gl_date_delta('20190417','m=-4');
+-- result:
+20181217
+-- !result
+SELECT gl_date_delta('2019-04-17 03:04:05','hour=+30');
+-- result:
+2019-04-18 09:04:05
+-- !result
+SELECT gl_date_delta('2019-04-17 03:04:05','n=+90');
+-- result:
+2019-04-17 04:34:05
+-- !result
+SELECT gl_date_delta('2019-04-17 03:04:05','second=+86400');
+-- result:
+2019-04-18 03:04:05
+-- !result
+SELECT gl_date_delta('20190131','m=+1');
+-- result:
+20190228
+-- !result
+SELECT gl_date_delta('20200229','y=+1');
+-- result:
+20210228
+-- !result
+SELECT gl_date_delta('20190417','y=2020');
+-- result:
+20200417
+-- !result
+SELECT gl_date_delta('20190417','m=2');
+-- result:
+20190217
+-- !result
+SELECT gl_date_delta('20190417','d=1');
+-- result:
+20190401
+-- !result
+SELECT gl_date_delta('2019-04-17 03:04:05','h=0');
+-- result:
+2019-04-17 00:04:05
+-- !result
+SELECT gl_date_delta('2019-04-17 03:04:05','h=23');
+-- result:
+2019-04-17 23:04:05
+-- !result
+SELECT gl_date_delta('2019-04-17 03:04:05','n=30,s=15');
+-- result:
+2019-04-17 03:30:15
+-- !result
+SELECT gl_date_delta('2019-04-17 15:00:00','h=5');
+-- result:
+2019-04-17 05:00:00
+-- !result
+SELECT gl_date_delta('2019-04-17 03:00:00','h=17');
+-- result:
+2019-04-17 17:00:00
+-- !result
+SELECT gl_date_delta('20190417','m=13');
+-- result:
+[REGEX]E: .*gl_date_delta.*
+-- !result
+SELECT gl_date_delta('20190417','m=0');
+-- result:
+[REGEX]E: .*gl_date_delta.*
+-- !result
+SELECT gl_date_delta('20190417','d=32');
+-- result:
+[REGEX]E: .*gl_date_delta.*
+-- !result
+SELECT gl_date_delta('2019-04-17 03:04:05','h=24');
+-- result:
+[REGEX]E: .*gl_date_delta.*
+-- !result
+SELECT gl_date_delta('2019-04-17 03:04:05','n=60');
+-- result:
+[REGEX]E: .*gl_date_delta.*
+-- !result
+SELECT gl_date_delta('20190417','d=31');
+-- result:
+None
+-- !result
+SELECT gl_date_delta('20200229','y=2019');
+-- result:
+None
+-- !result
+SELECT gl_date_delta('20190131','m=2');
+-- result:
+None
+-- !result
+SELECT gl_date_delta('20190131','m=2,d=1');
+-- result:
+20190201
+-- !result
+SELECT gl_date_delta('99991231','+1');
+-- result:
+None
+-- !result
+SELECT gl_date_delta('20190417','x=1');
+-- result:
+[REGEX]E: .*gl_date_delta.*
+-- !result
+SELECT gl_date_delta('20190417','Y=1');
+-- result:
+[REGEX]E: .*gl_date_delta.*
+-- !result
+SELECT gl_date_delta('20190417','quarter=1');
+-- result:
+[REGEX]E: .*gl_date_delta.*
+-- !result
+SELECT gl_date_delta('20190417','day=1,,month=1');
+-- result:
+[REGEX]E: .*gl_date_delta.*
+-- !result
+SELECT gl_date_delta('20190417','day=abc');
+-- result:
+[REGEX]E: .*gl_date_delta.*
+-- !result
+SELECT gl_date_delta('20190417','day');
+-- result:
+[REGEX]E: .*gl_date_delta.*
+-- !result
+SELECT gl_date_delta('20190417','+3,+4');
+-- result:
+[REGEX]E: .*gl_date_delta.*
+-- !result
+SELECT gl_date_delta('20190417','day=1=2');
+-- result:
+[REGEX]E: .*gl_date_delta.*
+-- !result
+SELECT gl_date_delta('20190417',' day = +3 ');
+-- result:
+20190420
+-- !result
+SELECT gl_date_delta('20190417','day=+3,');
+-- result:
+20190420
+-- !result
+SELECT gl_date_delta('2019-1-7','+1');
+-- result:
+None
+-- !result
+SELECT gl_date_delta('20191332','+1');
+-- result:
+None
+-- !result
+SELECT gl_date_delta('abc','+1');
+-- result:
+None
+-- !result
+SELECT gl_date_delta('','+1');
+-- result:
+None
+-- !result
+SELECT gl_date_delta('2019/04/17','+1');
+-- result:
+None
+-- !result
+SELECT gl_date_delta('20190230','+1');
+-- result:
+None
+-- !result
+SELECT gl_date_delta('20190417','+1','yyyy-MM-dd');
+-- result:
+2019-04-18
+-- !result
+SELECT gl_date_delta('20190417','+1','EEE, d MMM yyyy');
+-- result:
+Thu, 18 Apr 2019
+-- !result
+SELECT gl_date_delta('20190417','+1','yyyy-MM-dd HH:mm');
+-- result:
+2019-04-18 00:00
+-- !result
+SELECT gl_date_delta('20190417','+1','');
+-- result:
+20190418
+-- !result
+SELECT gl_date_delta('2019-04-17 03:04:05','+1',' ');
+-- result:
+2019-04-18 03:04:05
+-- !result
+SELECT gl_date_delta('20190417','+1',NULL);
+-- result:
+[REGEX]E: .*gl_date_delta.*
+-- !result
+SELECT gl_date_delta('20190417','+1','bad''');
+-- result:
+[REGEX]E: .*gl_date_delta.*
+-- !result
+
+-- name: test_glbk_date_diff_samples
+SELECT gl_date_diff('20190417');
+-- result:
+None
+-- !result
+SELECT gl_date_diff('20190417','20190416','day','x');
+-- result:
+None
+-- !result
+SELECT gl_date_diff('20180101','20180201');
+-- result:
+-31
+-- !result
+SELECT gl_date_diff('2018-02-01','2018-01-01');
+-- result:
+31
+-- !result
+SELECT gl_date_diff(NULL,'20190417');
+-- result:
+None
+-- !result
+SELECT gl_date_diff('20190417',NULL,'day');
+-- result:
+None
+-- !result
+SELECT gl_date_diff('20170101','20180201','month');
+-- result:
+-13
+-- !result
+SELECT gl_date_diff('20190101','20181231','year');
+-- result:
+1
+-- !result
+SELECT gl_date_diff('20190101','20181231','y');
+-- result:
+1
+-- !result
+SELECT gl_date_diff('20190201','20190131','m');
+-- result:
+1
+-- !result
+SELECT gl_date_diff('2019-04-01','2019-03-31','quarter');
+-- result:
+1
+-- !result
+SELECT gl_date_diff('2019-05-01','2019-03-31','quarter');
+-- result:
+1
+-- !result
+SELECT gl_date_diff('2019-06-30','2019-04-01','q');
+-- result:
+0
+-- !result
+SELECT gl_date_diff('2020-01-01','2019-12-31','q');
+-- result:
+1
+-- !result
+SELECT gl_date_diff('2019-12-31','2019-01-01','q');
+-- result:
+3
+-- !result
+SELECT gl_date_diff('20190417','20190414','week');
+-- result:
+0
+-- !result
+SELECT gl_date_diff('20190421','20190420','w');
+-- result:
+1
+-- !result
+SELECT gl_date_diff('20190101','20181229','w');
+-- result:
+1
+-- !result
+SELECT gl_date_diff('20190101','20181230','w');
+-- result:
+0
+-- !result
+SELECT gl_date_diff('20191231','20190101','w');
+-- result:
+52
+-- !result
+SELECT gl_date_diff('20200615','20190615','w');
+-- result:
+53
+-- !result
+SELECT gl_date_diff('20190415','20181231','week');
+-- result:
+15
+-- !result
+SELECT gl_date_diff('20200101','20190101','w');
+-- result:
+52
+-- !result
+SELECT gl_date_diff('2021-01-03','2021-01-02','week');
+-- result:
+1
+-- !result
+SELECT gl_date_diff('2019-04-17 07:00:00','2019-04-16 09:00:00','day');
+-- result:
+1
+-- !result
+SELECT gl_date_diff('2019-04-17 00:00:00','2019-04-16 23:59:59','d');
+-- result:
+1
+-- !result
+SELECT gl_date_diff('2019-04-17 23:59:59','2019-04-17 00:00:00','d');
+-- result:
+0
+-- !result
+SELECT gl_date_diff('20200101','20190101','d');
+-- result:
+365
+-- !result
+SELECT gl_date_diff('2019-04-17 03:00:00','2019-04-17 02:59:59','hour');
+-- result:
+1
+-- !result
+SELECT gl_date_diff('2019-04-18 03:10:00','2019-04-17 02:50:00','h');
+-- result:
+25
+-- !result
+SELECT gl_date_diff('2019-04-17 03:05:00','2019-04-17 03:04:59','minute');
+-- result:
+1
+-- !result
+SELECT gl_date_diff('2019-04-17 03:05:59','2019-04-17 03:05:00','n');
+-- result:
+0
+-- !result
+SELECT gl_date_diff('2019-04-17 03:05:01','2019-04-17 03:05:00','second');
+-- result:
+1
+-- !result
+SELECT gl_date_diff('20190418','20190417','s');
+-- result:
+86400
+-- !result
+SELECT gl_date_diff('1969-12-31 23:30:00','1969-12-31 22:00:00','h');
+-- result:
+1
+-- !result
+SELECT gl_date_diff('1969-12-31 23:59:59','1969-12-31 00:00:00','d');
+-- result:
+0
+-- !result
+SELECT gl_date_diff('1988-04-17 04:00:00','1988-04-17 01:00:00','h');
+-- result:
+3
+-- !result
+SELECT gl_date_diff('20190417','20190416','xx');
+-- result:
+[REGEX]E: .*gl_date_diff.*
+-- !result
+SELECT gl_date_diff('20190417','20190416','DAY');
+-- result:
+[REGEX]E: .*gl_date_diff.*
+-- !result
+SELECT gl_date_diff('20190417','20190416','');
+-- result:
+[REGEX]E: .*gl_date_diff.*
+-- !result
+SELECT gl_date_diff('20190417','20190416',NULL);
+-- result:
+[REGEX]E: .*gl_date_diff.*
+-- !result
+SELECT gl_date_diff('abc','20190416','day');
+-- result:
+None
+-- !result
+SELECT gl_date_diff('20190417','20191332','month');
+-- result:
+None
+-- !result
+SELECT gl_date_diff('2019-1-7','20190416');
+-- result:
+None
+-- !result
+
+-- name: test_glbk_date_format_samples
+SELECT gl_date_format('20190417','yyyy','x');
+-- result:
+None
+-- !result
+SELECT gl_date_format(NULL);
+-- result:
+None
+-- !result
+SELECT gl_date_format('2019-04-17 03:04:05');
+-- result:
+20190417
+-- !result
+SELECT gl_date_format('20190417','yyyy-MM-dd');
+-- result:
+2019-04-17
+-- !result
+SELECT gl_date_format('20190417030405','yyyy-MM-dd HH:mm:ss');
+-- result:
+2019-04-17 03:04:05
+-- !result
+SELECT gl_date_format('2019-04-17 03:04:05','yyyyMMddHHmmss');
+-- result:
+20190417030405
+-- !result
+SELECT gl_date_format('20190417','EEEE, MMMM d, yyyy');
+-- result:
+Wednesday, April 17, 2019
+-- !result
+SELECT gl_date_format('20190417','yyyy-ww');
+-- result:
+2019-16
+-- !result
+SELECT gl_date_format('20191229','yyyy-ww');
+-- result:
+2019-01
+-- !result
+SELECT gl_date_format('20190417150405','hh:mm a');
+-- result:
+03:04 PM
+-- !result
+SELECT gl_date_format('20190417','');
+-- result:
+
+-- !result
+SELECT gl_date_format('20191332','yyyy-MM-dd');
+-- result:
+None
+-- !result
+SELECT gl_date_format('20191332');
+-- result:
+None
+-- !result
+SELECT gl_date_format('abc');
+-- result:
+None
+-- !result
+SELECT gl_date_format('','yyyy');
+-- result:
+None
+-- !result
+SELECT gl_date_format('2019-1-7');
+-- result:
+None
+-- !result
+SELECT gl_date_format('2019/04/17');
+-- result:
+None
+-- !result
+SELECT gl_date_format('1988-04-17 02:30:00','yyyy-MM-dd HH:mm:ss');
+-- result:
+1988-04-17 02:30:00
+-- !result
+SELECT gl_date_format('20190417',NULL);
+-- result:
+[REGEX]E: .*gl_date_format.*
+-- !result
+SELECT gl_date_format('20190417','bad''');
+-- result:
+[REGEX]E: .*gl_date_format.*
+-- !result
+SELECT gl_date_format('20190417','yyyy-MM-dd bbb');
+-- result:
+[REGEX]E: .*gl_date_format.*
+-- !result
+
+-- name: test_glbk_how_many_day_samples
+SELECT gl_how_many_day('20190417');
+-- result:
+None
+-- !result
+SELECT gl_how_many_day(NULL,'year');
+-- result:
+None
+-- !result
+SELECT gl_how_many_day('2019-04-17','year');
+-- result:
+107
+-- !result
+SELECT gl_how_many_day('2019-04-17','y');
+-- result:
+107
+-- !result
+SELECT gl_how_many_day('2019-04-17','quarter');
+-- result:
+17
+-- !result
+SELECT gl_how_many_day('2019-04-17','q');
+-- result:
+17
+-- !result
+SELECT gl_how_many_day('2019-04-17','month');
+-- result:
+17
+-- !result
+SELECT gl_how_many_day('2019-04-17','m');
+-- result:
+17
+-- !result
+SELECT gl_how_many_day('2019-04-17','week');
+-- result:
+4
+-- !result
+SELECT gl_how_many_day('2019-04-17','w');
+-- result:
+4
+-- !result
+SELECT gl_how_many_day('20190101','year');
+-- result:
+1
+-- !result
+SELECT gl_how_many_day('20201231','y');
+-- result:
+366
+-- !result
+SELECT gl_how_many_day('20190401','quarter');
+-- result:
+1
+-- !result
+SELECT gl_how_many_day('20190331','quarter');
+-- result:
+90
+-- !result
+SELECT gl_how_many_day('20191231','q');
+-- result:
+92
+-- !result
+SELECT gl_how_many_day('2019-03-19 23:59:59','quarter');
+-- result:
+78
+-- !result
+SELECT gl_how_many_day('1969-12-31 23:00:00','quarter');
+-- result:
+92
+-- !result
+SELECT gl_how_many_day('20190531','month');
+-- result:
+31
+-- !result
+SELECT gl_how_many_day('20190414','week');
+-- result:
+1
+-- !result
+SELECT gl_how_many_day('20190420','w');
+-- result:
+7
+-- !result
+SELECT gl_how_many_day('20191332','year');
+-- result:
+None
+-- !result
+SELECT gl_how_many_day('abc','month');
+-- result:
+None
+-- !result
+SELECT gl_how_many_day('20190417','day');
+-- result:
+[REGEX]E: .*gl_how_many_day.*
+-- !result
+SELECT gl_how_many_day('20190417','YEAR');
+-- result:
+[REGEX]E: .*gl_how_many_day.*
+-- !result
+SELECT gl_how_many_day('20190417','');
+-- result:
+[REGEX]E: .*gl_how_many_day.*
+-- !result
+SELECT gl_how_many_day('20190417',NULL);
+-- result:
+[REGEX]E: .*gl_how_many_day.*
+-- !result
+SELECT gl_how_many_day('20190417','year','x');
+-- result:
+None
+-- !result
+
+-- name: test_glbk_date_first_samples
+SELECT gl_date_first('20190417');
+-- result:
+None
+-- !result
+SELECT gl_date_first(NULL,'year');
+-- result:
+None
+-- !result
+SELECT gl_date_first('2019-04-17 12:00:00','year');
+-- result:
+20190101
+-- !result
+SELECT gl_date_first('2019-04-17 12:00:00','y');
+-- result:
+20190101
+-- !result
+SELECT gl_date_first('2019-04-17 12:00:00','quarter');
+-- result:
+20190401
+-- !result
+SELECT gl_date_first('2019-04-17 12:00:00','q');
+-- result:
+20190401
+-- !result
+SELECT gl_date_first('2019-04-17 12:00:00','month');
+-- result:
+20190401
+-- !result
+SELECT gl_date_first('2019-04-17 12:00:00','m');
+-- result:
+20190401
+-- !result
+SELECT gl_date_first('2019-04-17 12:00:00','week');
+-- result:
+20190414
+-- !result
+SELECT gl_date_first('2019-04-17 12:00:00','w');
+-- result:
+20190414
+-- !result
+SELECT gl_date_first('20190930','quarter');
+-- result:
+20190701
+-- !result
+SELECT gl_date_first('20200215','month');
+-- result:
+20200201
+-- !result
+SELECT gl_date_first('20190215','m');
+-- result:
+20190201
+-- !result
+SELECT gl_date_first('20190414','week');
+-- result:
+20190414
+-- !result
+SELECT gl_date_first('20190420','week');
+-- result:
+20190414
+-- !result
+SELECT gl_date_first('20190101','week');
+-- result:
+20181230
+-- !result
+SELECT gl_date_first('20181230','w');
+-- result:
+20181230
+-- !result
+SELECT gl_date_first('99991231','week');
+-- result:
+99991226
+-- !result
+SELECT gl_date_first('20191332','month');
+-- result:
+None
+-- !result
+SELECT gl_date_first('abc','year');
+-- result:
+None
+-- !result
+SELECT gl_date_first('','month');
+-- result:
+None
+-- !result
+SELECT gl_date_first('20190417','day');
+-- result:
+[REGEX]E: .*gl_date_first.*
+-- !result
+SELECT gl_date_first('20190417','Month');
+-- result:
+[REGEX]E: .*gl_date_first.*
+-- !result
+SELECT gl_date_first('20190417','');
+-- result:
+[REGEX]E: .*gl_date_first.*
+-- !result
+SELECT gl_date_first('20190417',NULL);
+-- result:
+[REGEX]E: .*gl_date_first.*
+-- !result
+SELECT gl_date_first('20190417','year','x');
+-- result:
+None
+-- !result
+
+-- name: test_glbk_date_last_samples
+SELECT gl_date_last('20190417');
+-- result:
+None
+-- !result
+SELECT gl_date_last(NULL,'year');
+-- result:
+None
+-- !result
+SELECT gl_date_last('2019-04-17 12:00:00','year');
+-- result:
+20191231
+-- !result
+SELECT gl_date_last('2019-04-17 12:00:00','y');
+-- result:
+20191231
+-- !result
+SELECT gl_date_last('2019-04-17 12:00:00','quarter');
+-- result:
+20190630
+-- !result
+SELECT gl_date_last('2019-04-17 12:00:00','q');
+-- result:
+20190630
+-- !result
+SELECT gl_date_last('2019-04-17 12:00:00','month');
+-- result:
+20190430
+-- !result
+SELECT gl_date_last('2019-04-17 12:00:00','m');
+-- result:
+20190430
+-- !result
+SELECT gl_date_last('2019-04-17 12:00:00','week');
+-- result:
+20190420
+-- !result
+SELECT gl_date_last('2019-04-17 12:00:00','w');
+-- result:
+20190420
+-- !result
+SELECT gl_date_last('20190930','quarter');
+-- result:
+20190930
+-- !result
+SELECT gl_date_last('20200215','month');
+-- result:
+20200229
+-- !result
+SELECT gl_date_last('20190215','m');
+-- result:
+20190228
+-- !result
+SELECT gl_date_last('20190414','week');
+-- result:
+20190420
+-- !result
+SELECT gl_date_last('20190420','week');
+-- result:
+20190420
+-- !result
+SELECT gl_date_last('20190101','week');
+-- result:
+20190105
+-- !result
+SELECT gl_date_last('20181230','w');
+-- result:
+20190105
+-- !result
+SELECT gl_date_last('99991231','week');
+-- result:
+None
+-- !result
+SELECT gl_date_last('20191332','month');
+-- result:
+None
+-- !result
+SELECT gl_date_last('abc','year');
+-- result:
+None
+-- !result
+SELECT gl_date_last('','month');
+-- result:
+None
+-- !result
+SELECT gl_date_last('20190417','day');
+-- result:
+[REGEX]E: .*gl_date_last.*
+-- !result
+SELECT gl_date_last('20190417','Month');
+-- result:
+[REGEX]E: .*gl_date_last.*
+-- !result
+SELECT gl_date_last('20190417','');
+-- result:
+[REGEX]E: .*gl_date_last.*
+-- !result
+SELECT gl_date_last('20190417',NULL);
+-- result:
+[REGEX]E: .*gl_date_last.*
+-- !result
+SELECT gl_date_last('20190417','year','x');
+-- result:
+None
+-- !result
+
+-- name: test_glbk_functions_table
+create database test_db_${uuid0};
+-- result:
+-- !result
+use test_db_${uuid0};
+-- result:
+-- !result
+create table t1 (id int, d varchar(32), d2 varchar(32), offs varchar(32), fmt varchar(32), unit varchar(16), dt varchar(16)) duplicate key(id) distributed by hash(id) buckets 1 properties("replication_num" = "1");
+-- result:
+-- !result
+insert into t1 values (1, '20190417', '20190416', '+1', 'yyyy-MM-dd', 'day', 'year'), (2, '2019-04-17 03:04:05', '2019-04-16 01:00:00', 'm=+1', 'yyyyMMddHHmmss', 'hour', 'quarter'), (3, '20200229', '20190229', 'y=+1', 'EEE, d MMM yyyy', 'month', 'month'), (4, '2019-1-7', '20190101', '+1', 'yyyy', 'year', 'week'), (5, NULL, '20190417', '+1', 'yyyy', 'day', 'year'), (6, '99991231', '99991230', '+1', 'yyyy', 'week', 'week'), (7, '20190131', '20181231', 'm=+1', 'yyyy.MM', 'quarter', 'quarter'), (8, '2019-04-17 15:30:45', '2019-04-17 07:00:00', 'h=13,n=5', 'hh:mm a', 'minute', 'month'), (9, '2019-04-17 03:04:05', '2019-04-17 03:04:04', '-1', ' ', 'second', 'year');
+-- result:
+-- !result
+select id, gl_date_format(d) from t1 order by id;
+-- result:
+1	20190417
+2	20190417
+3	20200229
+4	None
+5	None
+6	99991231
+7	20190131
+8	20190417
+9	20190417
+-- !result
+select id, gl_date_format(d, 'yyyy-MM-dd HH:mm:ss') from t1 order by id;
+-- result:
+1	2019-04-17 00:00:00
+2	2019-04-17 03:04:05
+3	2020-02-29 00:00:00
+4	None
+5	None
+6	9999-12-31 00:00:00
+7	2019-01-31 00:00:00
+8	2019-04-17 15:30:45
+9	2019-04-17 03:04:05
+-- !result
+select id, gl_date_format(d, 'EEEE, MMMM d, yyyy') from t1 order by id;
+-- result:
+1	Wednesday, April 17, 2019
+2	Wednesday, April 17, 2019
+3	Saturday, February 29, 2020
+4	None
+5	None
+6	Friday, December 31, 9999
+7	Thursday, January 31, 2019
+8	Wednesday, April 17, 2019
+9	Wednesday, April 17, 2019
+-- !result
+select id, gl_date_format(d, fmt) from t1 where id <> 9 order by id;
+-- result:
+1	2019-04-17
+2	20190417030405
+3	Sat, 29 Feb 2020
+4	None
+5	None
+6	9999
+7	2019.01
+8	03:30 PM
+-- !result
+select id, gl_date_delta(d) from t1 order by id;
+-- result:
+1	20190417
+2	2019-04-17 03:04:05
+3	20200229
+4	2019-1-7
+5	None
+6	99991231
+7	20190131
+8	2019-04-17 15:30:45
+9	2019-04-17 03:04:05
+-- !result
+select id, gl_date_delta(d, '+1') from t1 order by id;
+-- result:
+1	20190418
+2	2019-04-18 03:04:05
+3	20200301
+4	None
+5	None
+6	None
+7	20190201
+8	2019-04-18 15:30:45
+9	2019-04-18 03:04:05
+-- !result
+select id, gl_date_delta(d, 'y=+1,m=1,d=1,d=-1') from t1 order by id;
+-- result:
+1	20191231
+2	2019-12-31 03:04:05
+3	20201231
+4	None
+5	None
+6	99991231
+7	20191231
+8	2019-12-31 15:30:45
+9	2019-12-31 03:04:05
+-- !result
+select id, gl_date_delta(d, NULL) from t1 order by id;
+-- result:
+1	20190417
+2	2019-04-17 03:04:05
+3	20200229
+4	None
+5	None
+6	99991231
+7	20190131
+8	2019-04-17 15:30:45
+9	2019-04-17 03:04:05
+-- !result
+select id, gl_date_delta(d, offs) from t1 order by id;
+-- result:
+1	20190418
+2	2019-05-17 03:04:05
+3	20210228
+4	None
+5	None
+6	None
+7	20190228
+8	2019-04-17 13:05:45
+9	2019-04-16 03:04:05
+-- !result
+select id, gl_date_delta(d, '+1', 'yyyy-MM-dd') from t1 order by id;
+-- result:
+1	2019-04-18
+2	2019-04-18
+3	2020-03-01
+4	None
+5	None
+6	None
+7	2019-02-01
+8	2019-04-18
+9	2019-04-18
+-- !result
+select id, gl_date_delta(d, '+1', ' ') from t1 order by id;
+-- result:
+1	20190418
+2	2019-04-18 03:04:05
+3	20200301
+4	None
+5	None
+6	None
+7	20190201
+8	2019-04-18 15:30:45
+9	2019-04-18 03:04:05
+-- !result
+select id, gl_date_delta(d, 'day=+3', fmt) from t1 order by id;
+-- result:
+1	2019-04-20
+2	20190420030405
+3	Tue, 3 Mar 2020
+4	None
+5	None
+6	None
+7	2019.02
+8	03:30 PM
+9	2019-04-20 03:04:05
+-- !result
+select id, gl_date_delta(d, offs, 'yyyyMMddHHmmss') from t1 order by id;
+-- result:
+1	20190418000000
+2	20190517030405
+3	20210228000000
+4	None
+5	None
+6	None
+7	20190228000000
+8	20190417130545
+9	20190416030405
+-- !result
+select id, gl_date_delta(d, offs, fmt) from t1 order by id;
+-- result:
+1	2019-04-18
+2	20190517030405
+3	Sun, 28 Feb 2021
+4	None
+5	None
+6	None
+7	2019.02
+8	01:05 PM
+9	2019-04-16 03:04:05
+-- !result
+select id, gl_date_diff(d, d2) from t1 order by id;
+-- result:
+1	1
+2	1
+3	None
+4	None
+5	None
+6	1
+7	31
+8	0
+9	0
+-- !result
+select id, gl_date_diff(d, d2, 'day') from t1 order by id;
+-- result:
+1	1
+2	1
+3	None
+4	None
+5	None
+6	1
+7	31
+8	0
+9	0
+-- !result
+select id, gl_date_diff(d, d2, 'week') from t1 order by id;
+-- result:
+1	0
+2	0
+3	None
+4	None
+5	None
+6	0
+7	4
+8	0
+9	0
+-- !result
+select id, gl_date_diff(d, d2, unit) from t1 order by id;
+-- result:
+1	1
+2	26
+3	None
+4	None
+5	None
+6	0
+7	1
+8	510
+9	1
+-- !result
+select id, gl_date_diff(d, '20190101', 'month') from t1 order by id;
+-- result:
+1	3
+2	3
+3	13
+4	None
+5	None
+6	95771
+7	0
+8	3
+9	3
+-- !result
+select id, gl_how_many_day(d, 'year') from t1 order by id;
+-- result:
+1	107
+2	107
+3	60
+4	None
+5	None
+6	365
+7	31
+8	107
+9	107
+-- !result
+select id, gl_how_many_day(d, dt) from t1 order by id;
+-- result:
+1	107
+2	17
+3	29
+4	None
+5	None
+6	6
+7	31
+8	17
+9	107
+-- !result
+select id, gl_date_first(d, 'quarter') from t1 order by id;
+-- result:
+1	20190401
+2	20190401
+3	20200101
+4	None
+5	None
+6	99991001
+7	20190101
+8	20190401
+9	20190401
+-- !result
+select id, gl_date_first(d, dt) from t1 order by id;
+-- result:
+1	20190101
+2	20190401
+3	20200201
+4	None
+5	None
+6	99991226
+7	20190101
+8	20190401
+9	20190101
+-- !result
+select id, gl_date_last(d, 'week') from t1 order by id;
+-- result:
+1	20190420
+2	20190420
+3	20200229
+4	None
+5	None
+6	None
+7	20190202
+8	20190420
+9	20190420
+-- !result
+select id, gl_date_last(d, dt) from t1 order by id;
+-- result:
+1	20191231
+2	20190630
+3	20200229
+4	None
+5	None
+6	None
+7	20190331
+8	20190430
+9	20191231
+-- !result
+select id, gl_date_format(d, 'bad''') from t1 order by id;
+-- result:
+[REGEX]E: .*gl_date_format.*
+-- !result
+select id, gl_date_format(d, NULL) from t1 order by id;
+-- result:
+[REGEX]E: .*gl_date_format.*
+-- !result
+select id, gl_date_delta(d, 'x=1') from t1 order by id;
+-- result:
+[REGEX]E: .*gl_date_delta.*
+-- !result
+select id, gl_date_delta(d, '+1', NULL) from t1 order by id;
+-- result:
+[REGEX]E: .*gl_date_delta.*
+-- !result
+select id, gl_date_diff(d, d2, 'DAY') from t1 order by id;
+-- result:
+[REGEX]E: .*gl_date_diff.*
+-- !result
+select id, gl_how_many_day(d, 'day') from t1 order by id;
+-- result:
+[REGEX]E: .*gl_how_many_day.*
+-- !result
+select id, gl_date_first(d, NULL) from t1 order by id;
+-- result:
+[REGEX]E: .*gl_date_first.*
+-- !result
+select id, gl_date_format(d, 'bad''') from t1 where d is null order by id;
+-- result:
+5	None
+-- !result
+select id, gl_date_delta(d, 'x=1', NULL) from t1 where d is null order by id;
+-- result:
+5	None
+-- !result
+select id, gl_how_many_day(d, 'day') from t1 where d is null order by id;
+-- result:
+5	None
+-- !result
+drop database test_db_${uuid0};
+-- result:
+-- !result

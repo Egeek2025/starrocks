@@ -1910,4 +1910,17 @@ vectorized_functions = [
          ],
          'ai': ai_metadata('CHAT', 'FILTER', 'BOOLEAN', inputs=('input', 'condition'))
      }],
+    # glbk date functions (native replacements of the Java UDFs in contrib/glbk-hive-udf-compat), implemented in
+    # be/src/exprs/glbk_functions.{h,cpp}. fn_ids 400000-409999 are reserved for the Spark/Hive compatibility
+    # project. They are variadic like the Java UDFs: an unsupported argument count returns NULL, zero arguments
+    # fail in the analyzer. NULL arguments are passed to the function unchanged (see glbk_functions.h).
+    # A same-named Java UDF is shadowed by these builtins (builtin functions are resolved before UDFs).
+    [400001, 'gl_date_delta', True, False, 'VARCHAR', ['VARCHAR', '...'], 'GlbkFunctions::gl_date_delta',
+     'GlbkFunctions::gl_date_delta_prepare', 'GlbkFunctions::gl_date_delta_close'],
+    [400002, 'gl_date_diff', True, False, 'VARCHAR', ['VARCHAR', '...'], 'GlbkFunctions::gl_date_diff'],
+    [400003, 'gl_date_format', True, False, 'VARCHAR', ['VARCHAR', '...'], 'GlbkFunctions::gl_date_format',
+     'GlbkFunctions::gl_date_format_prepare', 'GlbkFunctions::gl_date_format_close'],
+    [400004, 'gl_how_many_day', True, False, 'VARCHAR', ['VARCHAR', '...'], 'GlbkFunctions::gl_how_many_day'],
+    [400005, 'gl_date_first', True, False, 'VARCHAR', ['VARCHAR', '...'], 'GlbkFunctions::gl_date_first'],
+    [400006, 'gl_date_last', True, False, 'VARCHAR', ['VARCHAR', '...'], 'GlbkFunctions::gl_date_last'],
 ]

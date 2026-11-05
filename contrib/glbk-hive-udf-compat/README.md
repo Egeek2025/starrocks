@@ -79,6 +79,15 @@ mvn -B package          # 生成 target/glbk-hive-udf-compat-1.0.0.jar，并跑�
 4. 把 jar 放到所有 FE、BE 都能访问的 HTTP 地址，替换 [sql/register.sql](sql/register.sql) 里的 `${JAR_URL}` 后执行。它会注册两套共 16 个全局函数。
 5. Hive 脚本里的 `create temporary function ... using jar ...` 在 StarRocks 上不需要，也执行不了，迁移时要从脚本里去掉（本次不做自动处理）。
 
+## 原生内置函数（BE，fn_id 400001-400006）
+
+`gl_date_delta`、`gl_date_diff`、`gl_date_format`、`gl_how_many_day`、`gl_date_first`、`gl_date_last` 另有 C++ 原生内置实现（`be/src/exprs/glbk_date_core.{h,cpp}` 是算法，`be/src/exprs/glbk_functions.{h,cpp}` 是 BE 绑定，函数表在 `gensrc/script/functions.py`），语义与上面的 Java 正式版一致（以 [samples/samples.csv](samples/samples.csv) 为准）。`gl_now` 仍然是 Java UDF（要用 BE JVM 的时区）。
+
+- **同名 UDF 必须删除**：FE 解析函数名时先找内置函数、后找 UDF（`FunctionAnalyzer.getAnalyzedFunctionImpl`），所以内置函数上线后，不带库名的 `gl_date_delta(...)` 等调用永远走内置版，Java 版的 UDF 不会再被调用。升级后请执行 `DROP FUNCTION gl_date_delta(VARCHAR, ...)` 等语句清理同名 UDF（`gl_now` 保留），避免误以为还在用 Java 版。FE 不需要改动。
+- 与 Java UDF 一样是变参 `(VARCHAR, ...)`：参数个数不支持时返回 NULL，零参数调用在分析阶段报“找不到函数签名”。
+- 参数为 SQL NULL 时原样传给函数（内置标量函数没有统一的 NULL 传播），由函数决定返回 NULL 还是报参数错误（如 `gl_date_format('20190417', NULL)` 报错）。参数错误以 `InvalidArgument` 状态让查询失败，错误信息与 Java 版同样指明函数名。
+- 常量的 format / offsets 在 prepare 阶段预编译；常量参数本身有错时不在 prepare 阶段失败，而是让逐行路径在第一行真正校验参数时报同样的错（日期为 NULL 的行仍返回 NULL，与 Java 版一致）。
+
 ## 验证
 
 | 测试 | 内容 | 结果 |
