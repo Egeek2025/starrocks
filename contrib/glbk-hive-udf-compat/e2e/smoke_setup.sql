@@ -1,0 +1,13 @@
+DROP TABLE IF EXISTS glbk_e2e.t_dates;
+CREATE TABLE glbk_e2e.t_dates (id INT, d STRING, dt DATETIME)
+DISTRIBUTED BY HASH(id) BUCKETS 3 PROPERTIES ("replication_num" = "1");
+INSERT INTO glbk_e2e.t_dates VALUES
+ (1,'20180101','2018-01-01 08:00:00'),
+ (2,'2018-02-28','2018-02-28 23:59:59'),
+ (3,'20200228','2020-02-28 00:00:00'),
+ (4,'2019-12-31','2019-12-31 12:30:00'),
+ (5,NULL,NULL);
+DROP TABLE IF EXISTS glbk_e2e.t_dates_nn;
+CREATE TABLE glbk_e2e.t_dates_nn (id INT NOT NULL, d STRING NOT NULL)
+DISTRIBUTED BY HASH(id) BUCKETS 1 PROPERTIES ("replication_num" = "1");
+INSERT INTO glbk_e2e.t_dates_nn VALUES (1,'20180101'),(2,'2018-02-28'),(3,'20180101');

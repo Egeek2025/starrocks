@@ -1,0 +1,3 @@
+sql,expected
+"SELECT group_concat(id ORDER BY id) FROM t_dates WHERE gl_date_delta(d,'day=+1')='20180102'",1
+"SELECT count(*) FROM t_dates WHERE gl_date_first(d,'month') IS NULL",1
