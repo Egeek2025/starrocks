@@ -14,40 +14,103 @@
 
 package com.glbk.starrocks.udf.core;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.GregorianCalendar;
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.TimeZone;
 
 /**
  * Output formatting with {@link java.text.SimpleDateFormat} patterns (the pattern language the original
  * Hive UDFs accept), always with {@link Locale#US} and a Gregorian, Sunday-first calendar so the result
- * does not depend on the JVM default locale. A {@link Pattern} is created per call and never shared,
- * because {@code SimpleDateFormat} is not thread-safe.
+ * does not depend on the JVM default locale. The four default shapes are formatted by hand; other patterns
+ * are compiled once per thread and cached, because {@code SimpleDateFormat} is not thread-safe.
  */
 final class DateFormats {
-    private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.ofPattern("uuuuMMdd", Locale.US);
-    private static final DateTimeFormatter YYYY_MM_DD = DateTimeFormatter.ofPattern("uuuu-MM-dd", Locale.US);
-    private static final DateTimeFormatter YYYYMMDDHHMMSS =
-            DateTimeFormatter.ofPattern("uuuuMMddHHmmss", Locale.US);
-    private static final DateTimeFormatter YYYY_MM_DD_HH_MM_SS =
-            DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss", Locale.US);
+    /** Cached compiled SimpleDateFormat patterns, per thread (SimpleDateFormat is not thread-safe). */
+    private static final int MAX_CACHED_PATTERNS = 64;
+    private static final ThreadLocal<Map<String, Pattern>> CACHE = ThreadLocal.withInitial(HashMap::new);
+
+    /** The four shapes the original UDFs use by default, formatted by hand without any formatter object. */
+    enum Fast {
+        YYYYMMDD, YYYY_MM_DD, YYYYMMDDHHMMSS, YYYY_MM_DD_HH_MM_SS;
+
+        static Fast of(String pattern) {
+            switch (pattern) {
+                case "yyyyMMdd":
+                    return YYYYMMDD;
+                case "yyyy-MM-dd":
+                    return YYYY_MM_DD;
+                case "yyyyMMddHHmmss":
+                    return YYYYMMDDHHMMSS;
+                case "yyyy-MM-dd HH:mm:ss":
+                    return YYYY_MM_DD_HH_MM_SS;
+                default:
+                    return null;
+            }
+        }
+
+        String format(LocalDateTime t) {
+            boolean dashed = this == YYYY_MM_DD || this == YYYY_MM_DD_HH_MM_SS;
+            boolean time = this == YYYYMMDDHHMMSS || this == YYYY_MM_DD_HH_MM_SS;
+            char[] b = new char[(dashed ? 10 : 8) + (time ? (dashed ? 9 : 6) : 0)];
+            int i = put(b, 0, t.getYear(), 4);
+            if (dashed) {
+                b[i++] = '-';
+            }
+            i = put(b, i, t.getMonthValue(), 2);
+            if (dashed) {
+                b[i++] = '-';
+            }
+            i = put(b, i, t.getDayOfMonth(), 2);
+            if (time) {
+                if (dashed) {
+                    b[i++] = ' ';
+                }
+                i = put(b, i, t.getHour(), 2);
+                if (dashed) {
+                    b[i++] = ':';
+                }
+                i = put(b, i, t.getMinute(), 2);
+                if (dashed) {
+                    b[i++] = ':';
+                }
+                put(b, i, t.getSecond(), 2);
+            }
+            return new String(b);
+        }
+
+        /** Writes {@code v} (0 <= v < 10^width, years are limited to 1..9999) zero-padded to {@code width}. */
+        private static int put(char[] b, int at, int v, int width) {
+            for (int k = at + width - 1; k >= at; k--) {
+                b[k] = (char) ('0' + v % 10);
+                v /= 10;
+            }
+            return at + width;
+        }
+    }
+
+    /** yyyyMMdd of a date in year 1..9999. */
+    static String yyyyMMdd(LocalDate d) {
+        return Fast.YYYYMMDD.format(d.atStartOfDay());
+    }
 
     private DateFormats() {
     }
 
-    /** A validated output pattern; use it for one evaluation only. */
+    /** A validated output pattern; the instance may be reused only by the thread that obtained it. */
     static final class Pattern {
-        private final DateTimeFormatter fast;
+        private final Fast fast;
         private final java.text.SimpleDateFormat sdf;
         private final String fn;
         private final String pattern;
 
-        private Pattern(String fn, String pattern, DateTimeFormatter fast, java.text.SimpleDateFormat sdf) {
+        private Pattern(String fn, String pattern, Fast fast, java.text.SimpleDateFormat sdf) {
             this.fn = fn;
             this.pattern = pattern;
             this.fast = fast;
@@ -90,10 +153,19 @@ final class DateFormats {
         if (pattern == null) {
             throw new IllegalArgumentException(fn + ": format must not be null");
         }
-        DateTimeFormatter fast = allowFast ? fastFormatter(pattern) : null;
+        Fast fast = allowFast ? Fast.of(pattern) : null;
         if (fast != null) {
             return new Pattern(fn, pattern, fast, null);
         }
+        // Cache per thread; the key includes the function name (used in error messages) and the zone,
+        // because gl_now renders in the JVM default zone and that can change.
+        String key = fn + '\u0000' + tz.getID() + '\u0000' + pattern;
+        Map<String, Pattern> cache = CACHE.get();
+        Pattern cached = cache.get(key);
+        if (cached != null) {
+            return cached;
+        }
+        Pattern compiled;
         try {
             java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat(pattern, Locale.US);
             GregorianCalendar cal = new GregorianCalendar(tz, Locale.US);
@@ -101,25 +173,15 @@ final class DateFormats {
             cal.setFirstDayOfWeek(Calendar.SUNDAY);
             cal.setMinimalDaysInFirstWeek(1);
             sdf.setCalendar(cal);
-            return new Pattern(fn, pattern, null, sdf);
+            compiled = new Pattern(fn, pattern, null, sdf);
         } catch (IllegalArgumentException e) {
-            throw bad(fn, pattern, e);
+            throw bad(fn, pattern, e); // invalid patterns are never cached
         }
-    }
-
-    private static DateTimeFormatter fastFormatter(String pattern) {
-        switch (pattern) {
-            case "yyyyMMdd":
-                return YYYYMMDD;
-            case "yyyy-MM-dd":
-                return YYYY_MM_DD;
-            case "yyyyMMddHHmmss":
-                return YYYYMMDDHHMMSS;
-            case "yyyy-MM-dd HH:mm:ss":
-                return YYYY_MM_DD_HH_MM_SS;
-            default:
-                return null;
+        if (cache.size() >= MAX_CACHED_PATTERNS) {
+            cache.clear();
         }
+        cache.put(key, compiled);
+        return compiled;
     }
 
     private static IllegalArgumentException bad(String fn, String pattern, IllegalArgumentException cause) {

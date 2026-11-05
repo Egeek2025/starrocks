@@ -17,11 +17,11 @@ package com.glbk.starrocks.udf.core;
 import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Shared logic of the gl_* date functions (corrected semantics, see the module README).
@@ -30,10 +30,9 @@ import java.util.Locale;
  * {@code null}; wrong PARAMETERS (unknown unit, malformed offsets, bad output pattern, null dtype ...)
  * throw {@link IllegalArgumentException}. All calendar arithmetic is on {@link LocalDateTime} (wall clock),
  * so results do not depend on the JVM time zone or default locale (except {@code gl_now}).
- * Everything here is stateless and thread-safe.
+ * Thread-safe: the only state is caches of immutable parsed offsets and per-thread compiled patterns.
  */
 public final class GlDates {
-    private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.ofPattern("uuuuMMdd", Locale.US);
 
     private enum Unit {
         YEAR("year", "y"), QUARTER("quarter", "q"), MONTH("month", "m"), WEEK("week", "w"),
@@ -202,7 +201,27 @@ public final class GlDates {
         return dashed ? "yyyy-MM-dd HH:mm:ss" : "yyyyMMddHHmmss";
     }
 
+    /** Parsed offsets by text; offsets are almost always a constant, so each row reuses the parse. */
+    private static final int MAX_CACHED_OFFSETS = 256;
+    private static final ConcurrentHashMap<String, List<Op>> OFFSETS_CACHE = new ConcurrentHashMap<>();
+
     private static List<Op> parseOffsets(String fn, String offsets) {
+        if (offsets == null) {
+            return Collections.emptyList();
+        }
+        List<Op> cached = OFFSETS_CACHE.get(offsets);
+        if (cached != null) {
+            return cached;
+        }
+        List<Op> parsed = Collections.unmodifiableList(parseOffsetsUncached(fn, offsets)); // throws on bad input
+        if (OFFSETS_CACHE.size() >= MAX_CACHED_OFFSETS) {
+            OFFSETS_CACHE.clear();
+        }
+        OFFSETS_CACHE.put(offsets, parsed);
+        return parsed;
+    }
+
+    private static List<Op> parseOffsetsUncached(String fn, String offsets) {
         List<Op> ops = new ArrayList<>();
         if (isBlank(offsets)) {
             return ops;
@@ -481,7 +500,7 @@ public final class GlDates {
         if (r.getYear() < 1 || r.getYear() > 9999) {
             return null; // e.g. the week of 9999-12-31 ends in year 10000
         }
-        return YYYYMMDD.format(r);
+        return DateFormats.yyyyMMdd(r);
     }
 
     private static LocalDate quarterFirst(LocalDate d) {
