@@ -96,6 +96,6 @@ mvn -B package          # 生成 target/glbk-hive-udf-compat-1.0.0.jar，并跑�
 
 ## 性能
 
-实测（4 vCPU 单机，1000 万行）：Java UDF 比等价的内置函数表达式慢 **1.2 到 5.8 倍**，多数在 2 到 3 倍，`gl_date_delta` 和 `gl_date_format` 差距最大。方法、数据和优化方向见 [e2e/BENCHMARK.md](e2e/BENCHMARK.md)。
+实测（4 vCPU 单机，1000 万行）：经过 UDF 内部优化后，Java UDF 比等价的内置函数表达式慢 **1.3 到 3.5 倍**（优化前 1.2 到 5.8 倍），`gl_date_delta` 和 `gl_date_format` 差距最大，剩余差距主要是 JNI 调用本身的开销。方法、数据和优化方向见 [e2e/BENCHMARK.md](e2e/BENCHMARK.md)。
 
 所有 `gl_*` 都是 BE 通过 JNI 调用的 Java UDF，FE 不会对常量参数做折叠。BE 的 `udf_thread_pool_size` 默认 1。大表上如果成为瓶颈，可以对常量参数的调用改写成 StarRocks 内置函数组合（例如 `gl_date_first(d,'month')` 改成 `date_format(date_trunc('month', str_to_date(d,'%Y%m%d')),'%Y%m%d')`），但对非法输入的处理要逐个用 `samples.csv` 核对。
