@@ -89,6 +89,10 @@ mvn -B package          # 生成 target/glbk-hive-udf-compat-1.0.0.jar，并跑�
 | 变异测试 | 撤掉一处 Locale.US、或把季度 bug 改回去，相关测试立即失败 | 有效 |
 | 端到端 [e2e/](e2e/README.md) | 真实 StarRocks 4.0.17 单机集群（本仓库 docker 环境，BE JDK 17、Asia/Shanghai）：正式版 `samples.csv` 214/214，对账版 `samples_hive.csv` 214/214，冒烟用例 16/16，零参数 `gl_now()` 可执行 | 全部通过 |
 
+## 实验：用内置函数组合实现（StarRocks 4.1+）
+
+[sql/register_sqludf.sql](sql/register_sqludf.sql) 把正式版 `gl_*` 注册成 SQL UDF：常量参数、常见写法的调用会展开成纯内置函数，不走 JNI；其它情况退回 Java 版 `gl_*_jni`。结果和 Java 版完全一致（端到端样本 214/214）。性能上 `gl_date_format`、`gl_date_delta` 比 Java 版快 1.2 到 2.5 倍，其它函数基本持平。详见 [e2e/BENCHMARK.md](e2e/BENCHMARK.md) 的“方案二”。
+
 ## 已知问题
 
 - **对账版在 WHERE 里遇到有 NULL 行的可空 STRING 列会报错**：StarRocks 会在列字典上对谓词求值，字典里用空串占位 NULL，而原版遇到空串会抛错（在 Hive 上 NULL 会被跳过，没有这个问题）。规避：会话里 `SET enable_column_expr_predicate = false`，或只在 SELECT 列表里用。正式版遇到空串返回 NULL，不受影响。详见 [e2e/README.md](e2e/README.md) 第三节。

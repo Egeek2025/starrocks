@@ -77,3 +77,17 @@ CSV 规则：列名默认 `sql` 和 `new_result`（`--sql-col`、`--expected-col
 2. **jar 的字节码版本不能高于 17**：FE/BE 的 JVM 是 17，用 JDK 21 默认参数编译的类会报 `compiled by a more recent version ... class file version 65.0`。模块 `pom.xml` 当前是 `maven.compiler.release=8`，注册和执行均成功；不要去掉这个设置。
 3. 零参数 Java UDF `gl_now()` 在 BE 上可以注册并执行（返回 8 位字符串），见 `smoke.csv`。
 4. 非法输入抛错时，BE 返回的是 `1064 JNI Exception, java.lang.NullPointerException ...`，与 Hive 一样是“查询失败”；CSV 里用 `ERROR` 即可匹配。
+
+## 四、StarRocks 4.1 集群与 SQL UDF 实验
+
+SQL UDF 需要 4.1+。Docker Hub 对匿名拉取限流（429）时，可以从 Google 的镜像源拉取：
+
+```bash
+SR_IMAGE=mirror.gcr.io/starrocks/allin1-ubuntu:4.1.7 SR_CONTAINER=starrocks-e2e-41 ./cluster.sh start
+./run_e2e.sh smoke.csv                       # 编译 jar、注册 Java 版、启动 jar 的 HTTP 服务
+python3 register_sqludf.py http://127.0.0.1:18088/<jar 文件名>   # 换成 SQL UDF 版（gl_*）+ gl_*_jni
+./run_e2e.sh ../samples/samples.csv --no-build --no-register
+python3 bench.py --dataset date --jni-suffix _jni --out bench_result_sqludf_date.md
+```
+
+注意：本沙箱在每条命令结束时会回收命令里启动的 dockerd。要让集群跨命令保持运行，需要在后台任务里启动并保持该任务存活。

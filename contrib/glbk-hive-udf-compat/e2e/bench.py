@@ -10,6 +10,7 @@ the whole table (otherwise the comparison would be meaningless), then runs each 
 row comes back and the time is dominated by evaluating the expression.
 """
 import argparse
+import re
 import statistics
 import time
 
@@ -105,6 +106,9 @@ def main():
     ap.add_argument("--runs", type=int, default=5)
     ap.add_argument("--out", default="bench_result.md")
     ap.add_argument("--dataset", choices=sorted(DATASETS), default="date")
+    ap.add_argument("--jni-suffix", default="",
+                    help="also time the Java UDF under gl_*<suffix> (e.g. _jni when gl_* are SQL UDFs, "
+                         "see register_sqludf.py); the UDF column then measures the SQL UDF")
     ap.add_argument("--set", action="append", default=[], metavar="VAR=VAL",
                     help="session variable, e.g. cbo_enable_low_cardinality_optimize=false")
     a = ap.parse_args()
@@ -132,15 +136,20 @@ def main():
         cur.execute(f"SELECT count(*) FROM {table} WHERE {udf} <> {builtin}")
         mismatches = cur.fetchone()[0]
         times = {}
-        for label, expr in (("udf", udf), ("builtin", builtin)):
+        variants = [("udf", udf), ("builtin", builtin)]
+        if a.jni_suffix:
+            jni = re.sub(r"\b(gl_[a-z_]+)\(", lambda m: m.group(1) + a.jni_suffix + "(", udf, count=1)
+            variants.append(("jni", jni))
+        for label, expr in variants:
             sql = f"SELECT max({expr}) FROM {table}"
             run(cur, sql)  # warm-up
             samples = [run(cur, sql)[0] for _ in range(a.runs)]
             times[label] = statistics.median(samples)
         ratio = times["udf"] / times["builtin"]
-        results.append((name, times["udf"], times["builtin"], ratio, mismatches))
+        results.append((name, times["udf"], times["builtin"], ratio, mismatches, times.get("jni")))
+        extra = f"  jni {times['jni']:7.3f}s" if "jni" in times else ""
         print(f"{name:38s} udf {times['udf']:7.3f}s  builtin {times['builtin']:7.3f}s  "
-              f"x{ratio:6.1f}  mismatches={mismatches}", flush=True)
+              f"x{ratio:6.1f}  mismatches={mismatches}{extra}", flush=True)
 
     # baseline: scanning the column without any function
     run(cur, f"SELECT max(d) FROM {table}")
@@ -151,10 +160,16 @@ def main():
                 f"rows={a.rows:,}, pipeline_dop={dop}, runs={a.runs} (median), "
                 f"udf_thread_pool_size={udf_pool}, session sets={a.set or 'none'}\n\n")
         f.write(f"Baseline `SELECT max(d) FROM {table}` (scan only): {scan:.3f}s\n\n")
-        f.write("| case | Java UDF (JNI) s | built-in s | UDF / built-in | UDF rows/s | built-in rows/s | mismatches |\n")
-        f.write("|---|---|---|---|---|---|---|\n")
-        for name, tu, tb, r, mm in results:
-            f.write(f"| `{name}` | {tu:.3f} | {tb:.3f} | {r:.1f}x | {a.rows / tu:,.0f} | {a.rows / tb:,.0f} | {mm} |\n")
+        if a.jni_suffix:
+            f.write("| case | Java UDF (JNI) s | SQL UDF s | built-in s | SQL UDF / built-in | JNI / built-in | mismatches |\n")
+            f.write("|---|---|---|---|---|---|---|\n")
+            for name, tu, tb, r, mm, tj in results:
+                f.write(f"| `{name}` | {tj:.3f} | {tu:.3f} | {tb:.3f} | {r:.2f}x | {tj / tb:.1f}x | {mm} |\n")
+        else:
+            f.write("| case | Java UDF (JNI) s | built-in s | UDF / built-in | UDF rows/s | built-in rows/s | mismatches |\n")
+            f.write("|---|---|---|---|---|---|---|\n")
+            for name, tu, tb, r, mm, _ in results:
+                f.write(f"| `{name}` | {tu:.3f} | {tb:.3f} | {r:.1f}x | {a.rows / tu:,.0f} | {a.rows / tb:,.0f} | {mm} |\n")
     print(f"scan baseline {scan:.3f}s; wrote {a.out}")
 
 
