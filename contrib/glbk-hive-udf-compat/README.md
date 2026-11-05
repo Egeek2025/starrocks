@@ -7,7 +7,7 @@
 | **正式版 `gl_*`** | 生产使用 | 修复了原 jar 的 bug（见“与 Hive 的差异”），非法数据返回 NULL，参数写错报错 |
 | **对账版 `gl_*_hive`** | 仅迁移期核对 Hive 历史结果，迁移完成后删除 | 与原 Hive jar 逐条一致（包括 bug），只把 Locale 固定为 US |
 
-面向业务方的变更说明：[CHANGES.md](CHANGES.md)。
+面向业务方的变更说明：[CHANGES.md](CHANGES.md)。实现路径、经验和下一步（C++ 原生函数）：[IMPLEMENTATION-LOG.md](IMPLEMENTATION-LOG.md)。
 
 ## 函数一览
 

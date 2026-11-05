@@ -28,7 +28,7 @@
 | [func_mapping.csv](func_mapping.csv) | 479 个 Spark 函数逐一分类（A/B/C/D/E）、SR 对应、差异、策略、难度 |
 | [research/](research/) | 5 份原始调研报告（parser、函数注册/UDF、大小写、函数差距、先行实践与语义） |
 | [spark-compat-design.html](spark-compat-design.html) | 全部设计与接管手册合成的单页网页（含可筛选函数映射表），由 `site/build_page.py` 生成 |
-| [contrib/glbk-hive-udf-compat](../../../../contrib/glbk-hive-udf-compat/README.md) | 第一个落地的 UDF 对齐样例：业务方 glbk Hive 日期 UDF（7 个）移植为 StarRocks Java UDF，同名同参，含与原 Hive 类的差分测试 |
+| [contrib/glbk-hive-udf-compat](../../../../contrib/glbk-hive-udf-compat/README.md) | 第一个落地的 UDF 对齐样例：业务方 glbk Hive 日期 UDF（7 个）移植为 StarRocks Java UDF，同名同参，含与原 Hive 类的差分测试；Java UDF / SQL UDF 两种实现与性能对比，实现路径与经验见其 IMPLEMENTATION-LOG.md |
 | [handover/](handover/README.md) | **开发接管手册**：开发流程、FE 查询链路、FE 元数据与平台、BE 执行与函数、58 张代码级任务单（含读码后对设计的 15 处修订） |
 
 ## 关键结论
@@ -58,3 +58,4 @@
 ## 调研说明
 
 本设计由 5 个并行调研 agent（源码 + 互联网）产出，主 agent 对关键结论做了源码抽查（`SqlParser.parse` L80-91、`Field.matchesPrefix` L218-233、`SelectAnalyzer` L315、ANTLR 版本）。标注 [待验证] 的语义项以及 Spark 4.0/4.1 函数清单置信度较低，需在 P0 基线测量中确认。
+- 2026-11-05: glbk UDF 对齐样例完成（Java UDF 正式版 + 对账版；4.1+ 的 SQL UDF 版为实验）。C++ 原生函数推迟，路径记录在 `contrib/glbk-hive-udf-compat/IMPLEMENTATION-LOG.md` 第 6 节。
