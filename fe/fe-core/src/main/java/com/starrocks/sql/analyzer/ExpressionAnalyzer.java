@@ -636,9 +636,22 @@ public class ExpressionAnalyzer {
         public Void visitCollectionElementExpr(CollectionElementExpr node, Scope scope) {
             Expr expr = node.getChild(0);
             Expr subscript = node.getChild(1);
+            boolean zeroBased = node.isZeroBasedSubscript();
+            // clear the flag so that analyzing the node again does not shift the subscript twice
+            node.setZeroBasedSubscript(false);
             if (expr.getType().isArrayType()) {
                 if (!subscript.getType().isNumericType()) {
                     throw new SemanticException("array subscript must have type integer", subscript.getPos());
+                }
+                if (zeroBased) {
+                    // Spark arrays are 0-based, StarRocks arrays are 1-based
+                    if (subscript instanceof IntLiteral) {
+                        subscript = new IntLiteral(((IntLiteral) subscript).getLongValue() + 1);
+                    } else {
+                        subscript = new ArithmeticExpr(ArithmeticExpr.Operator.ADD, subscript, new IntLiteral(1));
+                        visitArithmeticExpr((ArithmeticExpr) subscript, scope);
+                    }
+                    node.setChild(1, subscript);
                 }
                 try {
                     if (subscript.getType().getPrimitiveType() != PrimitiveType.INT) {

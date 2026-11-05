@@ -112,6 +112,7 @@ import com.starrocks.sql.ast.InstallPluginStmt;
 import com.starrocks.sql.ast.LoadStmt;
 import com.starrocks.sql.ast.MergeIntoStmt;
 import com.starrocks.sql.ast.OriginStatement;
+import com.starrocks.sql.ast.ParsedDialect;
 import com.starrocks.sql.ast.PauseRoutineLoadStmt;
 import com.starrocks.sql.ast.PrepareStmt;
 import com.starrocks.sql.ast.QueryStatement;
@@ -199,7 +200,21 @@ public class Analyzer {
     }
 
     public static void analyze(StatementBase statement, ConnectContext context) {
-        GlobalStateMgr.getCurrentState().getAnalyzer().analyzerVisitor.visit(statement, context);
+        // Relation aliases of a Spark statement are case-insensitive. The parser does not touch the session, so the
+        // flag is bound here from the dialect that parsed the statement and restored afterwards. Statements of other
+        // dialects keep whatever the session already has (the Trino dialect sets it while parsing).
+        boolean bindSparkAlias = context != null && statement.getParsedDialect() == ParsedDialect.SPARK;
+        boolean previousAliasCaseInsensitive = bindSparkAlias && context.isRelationAliasCaseInsensitive();
+        if (bindSparkAlias) {
+            context.setRelationAliasCaseInSensitive(true);
+        }
+        try {
+            GlobalStateMgr.getCurrentState().getAnalyzer().analyzerVisitor.visit(statement, context);
+        } finally {
+            if (bindSparkAlias) {
+                context.setRelationAliasCaseInSensitive(previousAliasCaseInsensitive);
+            }
+        }
     }
 
     public static class AnalyzerVisitor implements AstVisitorExtendInterface<Void, ConnectContext> {

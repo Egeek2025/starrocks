@@ -23,6 +23,10 @@ public class CollectionElementExpr extends Expr {
     // For trino and presto, access out of bound in map/array, it will throw error msg
     private final boolean checkIsOutOfBounds;
 
+    // For Spark, array subscripts are 0-based. The analyzer shifts the subscript by one when the base is an array
+    // (a map is left alone) and clears the flag, so analyzing the same node twice does not shift twice.
+    private boolean zeroBasedSubscript = false;
+
     public CollectionElementExpr(Expr expr, Expr subscript, boolean checkIsOutOfBounds) {
         super(NodePosition.ZERO);
         this.children.add(expr);
@@ -45,6 +49,7 @@ public class CollectionElementExpr extends Expr {
     public CollectionElementExpr(CollectionElementExpr other) {
         super(other);
         this.checkIsOutOfBounds = other.checkIsOutOfBounds;
+        this.zeroBasedSubscript = other.zeroBasedSubscript;
     }
 
 
@@ -69,5 +74,13 @@ public class CollectionElementExpr extends Expr {
 
     public boolean isCheckIsOutOfBounds() {
         return checkIsOutOfBounds;
+    }
+
+    public boolean isZeroBasedSubscript() {
+        return zeroBasedSubscript;
+    }
+
+    public void setZeroBasedSubscript(boolean zeroBasedSubscript) {
+        this.zeroBasedSubscript = zeroBasedSubscript;
     }
 }

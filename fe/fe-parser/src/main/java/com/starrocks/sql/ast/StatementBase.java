@@ -59,6 +59,10 @@ public abstract class StatementBase implements ParseNode {
 
     private ExplainLevel explainLevel;
 
+    // The dialect whose parser produced this statement. Statements that fell back to the StarRocks parser
+    // keep the default value.
+    private ParsedDialect parsedDialect = ParsedDialect.STARROCKS;
+
     private String traceMode;
 
     private String traceModule;
@@ -112,6 +116,14 @@ public abstract class StatementBase implements ParseNode {
         } else {
             return explainLevel;
         }
+    }
+
+    public ParsedDialect getParsedDialect() {
+        return parsedDialect;
+    }
+
+    public void setParsedDialect(ParsedDialect parsedDialect) {
+        this.parsedDialect = Preconditions.checkNotNull(parsedDialect);
     }
 
     public void setOrigStmt(OriginStatement origStmt) {

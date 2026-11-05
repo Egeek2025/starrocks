@@ -19,8 +19,6 @@ import com.google.common.collect.Sets;
 import com.starrocks.catalog.Column;
 import com.starrocks.common.Config;
 import com.starrocks.common.Pair;
-import com.starrocks.connector.parser.trino.TrinoParserUtils;
-import com.starrocks.connector.trino.TrinoParserUnsupportedException;
 import com.starrocks.qe.ConnectContext;
 import com.starrocks.qe.GlobalVariable;
 import com.starrocks.qe.SessionVariable;
@@ -33,16 +31,13 @@ import com.starrocks.sql.ast.PrepareStmt;
 import com.starrocks.sql.ast.StatementBase;
 import com.starrocks.sql.ast.expression.Expr;
 import com.starrocks.sql.ast.expression.TypeDef;
-import com.starrocks.sql.common.ErrorType;
-import com.starrocks.sql.common.StarRocksPlannerException;
-import com.starrocks.sql.common.UnsupportedException;
+import com.starrocks.sql.parser.dialect.SqlDialectRegistry;
 import com.starrocks.type.ArrayType;
 import com.starrocks.type.MapType;
 import com.starrocks.type.ScalarType;
 import com.starrocks.type.StructField;
 import com.starrocks.type.StructType;
 import com.starrocks.type.Type;
-import io.trino.sql.parser.StatementSplitter;
 import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
 import org.antlr.v4.runtime.ParserRuleContext;
@@ -58,12 +53,10 @@ import org.apache.logging.log4j.Logger;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import static com.starrocks.sql.common.UnsupportedException.unsupportedException;
 import static com.starrocks.sql.parser.AstBuilderUtils.createPos;
 import static com.starrocks.sql.parser.AstBuilderUtils.getIdentifier;
 
@@ -79,93 +72,14 @@ public class SqlParser {
 
     public static List<StatementBase> parse(String sql, SessionVariable sessionVariable) {
         try {
-            if (sessionVariable.getSqlDialect().equalsIgnoreCase("trino")) {
-                return parseWithTrinoDialect(sql, sessionVariable);
-            } else {
-                return parseWithStarRocksDialect(sql, sessionVariable);
-            }
+            return SqlDialectRegistry.get(sessionVariable.getSqlDialect()).parse(sql, sessionVariable);
         } catch (OutOfMemoryError e) {
             LOG.warn("parser out of memory, sql is:" + sql);
             throw e;
         }
     }
 
-    private static List<StatementBase> parseWithTrinoDialect(String sql, SessionVariable sessionVariable) {
-        List<StatementBase> statements = Lists.newArrayList();
-        try {
-            StatementSplitter splitter = new StatementSplitter(sql);
-            for (int idx = 0; idx < splitter.getCompleteStatements().size(); ++idx) {
-                StatementSplitter.Statement statement = splitter.getCompleteStatements().get(idx);
-                StatementBase statementBase = TrinoParserUtils.toStatement(statement.statement(),
-                        sessionVariable.getSqlMode());
-                statementBase.setOrigStmt(new OriginStatement(sql, idx));
-                statements.add(statementBase);
-            }
-            if (!splitter.getPartialStatement().isEmpty()) {
-                StatementBase statement = TrinoParserUtils.toStatement(splitter.getPartialStatement(),
-                        sessionVariable.getSqlMode());
-                statement.setOrigStmt(new OriginStatement(sql, splitter.getCompleteStatements().size()));
-                statements.add(statement);
-            }
-            if (ConnectContext.get() != null) {
-                ConnectContext.get().setRelationAliasCaseInSensitive(true);
-            }
-        } catch (ParsingException e) {
-            // In Trino parser AstBuilder, it could throw ParsingException for unexpected exception,
-            // use StarRocks parser to parse now.
-            LOG.warn("Trino parse sql [{}] error, cause by {}", sql, e);
-            return rollbackStarRocksDialect(sql, sessionVariable, e);
-        } catch (io.trino.sql.parser.ParsingException e) {
-            // This sql does not use Trino syntax，use StarRocks parser to parse now.
-            if (sql.toLowerCase().contains("select")) {
-                LOG.warn("Trino parse sql [{}] error, cause by {}", sql, e);
-            }
-            return rollbackStarRocksDialect(sql, sessionVariable, e);
-        } catch (TrinoParserUnsupportedException e) {
-            // We only support Trino partial syntax now, and for Trino parser unsupported statement,
-            // try to use StarRocks parser to parse
-            return rollbackStarRocksDialect(sql, sessionVariable, e);
-        } catch (UnsupportedException e) {
-            // For unsupported statement, it can not be parsed by trino or StarRocks parser, both parser
-            // can not support it now, we just throw the exception here to give user more information
-            LOG.warn("Sql [{}] are not supported by trino parser, cause by {}", sql, e);
-            throw e;
-        }
-        if (statements.isEmpty() || statements.stream().anyMatch(Objects::isNull)) {
-            return parseWithStarRocksDialect(sql, sessionVariable);
-        }
-        return statements;
-    }
-
-    private static List<StatementBase> rollbackStarRocksDialect(String sql, SessionVariable sessionVariable,
-                                                                RuntimeException exception) {
-        if (ConnectContext.get() != null) {
-            ConnectContext.get().setRelationAliasCaseInSensitive(false);
-        }
-        if (sessionVariable.isEnableDialectDowngrade()) {
-            return tryParseWithStarRocksDialect(sql, sessionVariable, exception);
-        }
-        throw exception;
-    }
-
-    private static List<StatementBase> tryParseWithStarRocksDialect(String sql, SessionVariable sessionVariable,
-                                                                    Exception trinoException) {
-        try {
-            return parseWithStarRocksDialect(sql, sessionVariable);
-        } catch (Exception starRocksException) {
-            LOG.warn("StarRocks parse sql [{}] error, cause by {}", sql, starRocksException);
-            if (trinoException instanceof UnsupportedException) {
-                throw unsupportedException(String.format("Trino parser parse sql error: [%s], " +
-                        "and StarRocks parser also can not parse: [%s]", trinoException, starRocksException));
-            } else {
-                throw new StarRocksPlannerException(ErrorType.USER_ERROR,
-                        String.format("Trino parser parse sql error: [%s], and StarRocks parser also can not parse: [%s]",
-                                trinoException, starRocksException));
-            }
-        }
-    }
-
-    private static List<StatementBase> parseWithStarRocksDialect(String sql, SessionVariable sessionVariable) {
+    public static List<StatementBase> parseWithStarRocksDialect(String sql, SessionVariable sessionVariable) {
         List<StatementBase> statements = Lists.newArrayList();
         Pair<ParserRuleContext, com.starrocks.sql.parser.StarRocksParser> pair =
                 invokeParser(sql, sessionVariable, com.starrocks.sql.parser.StarRocksParser::sqlStatements);

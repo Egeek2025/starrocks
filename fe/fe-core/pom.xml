@@ -149,6 +149,11 @@ under the License.
             <artifactId>fe-grammar</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>com.starrocks</groupId>
+            <artifactId>fe-grammar-spark</artifactId>
+        </dependency>
+
         <!-- xz used to reach fe/lib only via the excluded avro-ipc; keep it for the
              jars that still reference it (commons-compress, clickhouse-jdbc, ...) -->
         <dependency>
