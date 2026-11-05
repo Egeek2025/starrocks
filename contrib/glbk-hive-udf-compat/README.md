@@ -94,6 +94,8 @@ mvn -B package          # 生成 target/glbk-hive-udf-compat-1.0.0.jar，并跑�
 - **对账版在 WHERE 里遇到有 NULL 行的可空 STRING 列会报错**：StarRocks 会在列字典上对谓词求值，字典里用空串占位 NULL，而原版遇到空串会抛错（在 Hive 上 NULL 会被跳过，没有这个问题）。规避：会话里 `SET enable_column_expr_predicate = false`，或只在 SELECT 列表里用。正式版遇到空串返回 NULL，不受影响。详见 [e2e/README.md](e2e/README.md) 第三节。
 - `gl_now()` 在 Hive 中可能被编译期常量折叠；StarRocks Java UDF 按行求值，跨午夜的长查询里不同行可能得到不同日期。
 
-## 性能提示
+## 性能
 
-Java UDF 走 JNI 逐批调用；BE 的 `udf_thread_pool_size` 默认 1。大表上如果成为瓶颈，可以对常量参数的调用改写成 StarRocks 内置函数组合（例如 `gl_date_first(d,'month')` → `date_format(date_trunc('month', d), '%Y%m%d')`），但对非法输入的处理会不同，需要逐个评估。
+实测（4 vCPU 单机，1000 万行）：Java UDF 比等价的内置函数表达式慢 **1.2 到 5.8 倍**，多数在 2 到 3 倍，`gl_date_delta` 和 `gl_date_format` 差距最大。方法、数据和优化方向见 [e2e/BENCHMARK.md](e2e/BENCHMARK.md)。
+
+所有 `gl_*` 都是 BE 通过 JNI 调用的 Java UDF，FE 不会对常量参数做折叠。BE 的 `udf_thread_pool_size` 默认 1。大表上如果成为瓶颈，可以对常量参数的调用改写成 StarRocks 内置函数组合（例如 `gl_date_first(d,'month')` 改成 `date_format(date_trunc('month', str_to_date(d,'%Y%m%d')),'%Y%m%d')`），但对非法输入的处理要逐个用 `samples.csv` 核对。
