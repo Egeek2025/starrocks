@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package com.glbk.starrocks.udf;
+package com.glbk.starrocks.udf.hive;
 
 import com.glbk.utils.date.DateUtils;
 
 import java.util.Date;
 
-/** StarRocks port of {@code com.glbk.hive.udf.date.gl_how_many_day}: gl_how_many_day(date, dtype). */
-public class GlHowManyDay {
+/** StarRocks port of {@code com.glbk.hive.udf.date.gl_date_first}: gl_date_first(date, dtype). */
+public class GlDateFirstHive {
     public String evaluate(String... args) {
         if (args.length == 2) {
             if (args[0] == null) {
@@ -28,7 +28,7 @@ public class GlHowManyDay {
             String dt = args[0].toString();
             String dtype = args[1].toString();
             Date date = DateUtils.parse(dt);
-            return String.valueOf(DateUtils.getHowManyDay(date, dtype));
+            return HiveTextCompat.set(DateUtils.getFirstDay(date, dtype));
         } else {
             return null;
         }

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package com.glbk.starrocks.udf;
+package com.glbk.starrocks.udf.hive;
 
 import com.glbk.hive.udf.date.gl_date_delta;
 import com.glbk.hive.udf.date.gl_date_diff;
@@ -146,7 +146,7 @@ public class DifferentialTest {
         List<String[]> cases = arity == 1 ? cross(DATES) : arity == 2 ? cross(DATES, OFFSETS)
                 : arity == 3 ? cross(DATES, OFFSETS, FORMATS) : cross(DATES, OFFSETS, FORMATS, FORMATS);
         int n = compare("gl_date_delta", cases,
-                a -> str(new gl_date_delta().evaluate(texts(a))), a -> new GlDateDelta().evaluate(a));
+                a -> str(new gl_date_delta().evaluate(texts(a))), a -> new GlDateDeltaHive().evaluate(a));
         assertTrue(n > 0);
     }
 
@@ -156,7 +156,7 @@ public class DifferentialTest {
         List<String[]> cases = arity == 1 ? cross(DATES) : arity == 2 ? cross(DATES, DATES)
                 : arity == 3 ? cross(DATES, DATES, INTERVALS) : cross(DATES, DATES, INTERVALS, INTERVALS);
         compare("gl_date_diff", cases,
-                a -> str(new gl_date_diff().evaluate(texts(a))), a -> new GlDateDiff().evaluate(a));
+                a -> str(new gl_date_diff().evaluate(texts(a))), a -> new GlDateDiffHive().evaluate(a));
     }
 
     @ParameterizedTest
@@ -165,7 +165,7 @@ public class DifferentialTest {
         List<String[]> cases = arity == 1 ? cross(DATES) : arity == 2 ? cross(DATES, FORMATS)
                 : cross(DATES, FORMATS, FORMATS);
         compare("gl_date_format", cases,
-                a -> str(new gl_date_format().evaluate(texts(a))), a -> new GlDateFormat().evaluate(a));
+                a -> str(new gl_date_format().evaluate(texts(a))), a -> new GlDateFormatHive().evaluate(a));
     }
 
     @ParameterizedTest
@@ -174,11 +174,11 @@ public class DifferentialTest {
         List<String[]> cases = arity == 1 ? cross(DATES) : arity == 2 ? cross(DATES, DTYPES)
                 : cross(DATES, DTYPES, DTYPES);
         compare("gl_date_first", cases,
-                a -> str(new gl_date_first().evaluate(texts(a))), a -> new GlDateFirst().evaluate(a));
+                a -> str(new gl_date_first().evaluate(texts(a))), a -> new GlDateFirstHive().evaluate(a));
         compare("gl_date_last", cases,
-                a -> str(new gl_date_last().evaluate(texts(a))), a -> new GlDateLast().evaluate(a));
+                a -> str(new gl_date_last().evaluate(texts(a))), a -> new GlDateLastHive().evaluate(a));
         compare("gl_how_many_day", cases,
-                a -> str(new gl_how_many_day().evaluate(texts(a))), a -> new GlHowManyDay().evaluate(a));
+                a -> str(new gl_how_many_day().evaluate(texts(a))), a -> new GlHowManyDayHive().evaluate(a));
     }
 
     @ParameterizedTest
@@ -187,10 +187,10 @@ public class DifferentialTest {
         // Only date-level formats, so both sides run within the same day; "bad'" checks the error path.
         String[] fmts = {"yyyyMMdd", "yyyy-MM-dd", "yyyy", "bad'", null};
         List<String[]> cases = arity == 0 ? cross() : arity == 1 ? cross(fmts) : cross(fmts, fmts);
-        compare("gl_now", cases, a -> str(new gl_now().evaluate(texts(a))), a -> new GlNow().evaluate(a));
+        compare("gl_now", cases, a -> str(new gl_now().evaluate(texts(a))), a -> new GlNowHive().evaluate(a));
         if (arity == 0) {
             TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"));
-            assertEquals(Objects.requireNonNull(str(new gl_now().evaluate())), new GlNowNoArg().evaluate());
+            assertEquals(Objects.requireNonNull(str(new gl_now().evaluate())), new GlNowNoArgHive().evaluate());
         }
     }
 }

@@ -7,29 +7,29 @@
 -- GLOBAL makes them callable from every database (Hive's CREATE TEMPORARY FUNCTION was per session).
 
 CREATE GLOBAL FUNCTION gl_date_delta(string, ...) RETURNS string
-PROPERTIES ("symbol" = "com.glbk.starrocks.udf.GlDateDelta", "type" = "StarrocksJar", "file" = "${JAR_URL}");
+PROPERTIES ("symbol" = "com.glbk.starrocks.udf.hive.GlDateDeltaHive", "type" = "StarrocksJar", "file" = "${JAR_URL}");
 
 CREATE GLOBAL FUNCTION gl_date_diff(string, ...) RETURNS string
-PROPERTIES ("symbol" = "com.glbk.starrocks.udf.GlDateDiff", "type" = "StarrocksJar", "file" = "${JAR_URL}");
+PROPERTIES ("symbol" = "com.glbk.starrocks.udf.hive.GlDateDiffHive", "type" = "StarrocksJar", "file" = "${JAR_URL}");
 
 CREATE GLOBAL FUNCTION gl_date_format(string, ...) RETURNS string
-PROPERTIES ("symbol" = "com.glbk.starrocks.udf.GlDateFormat", "type" = "StarrocksJar", "file" = "${JAR_URL}");
+PROPERTIES ("symbol" = "com.glbk.starrocks.udf.hive.GlDateFormatHive", "type" = "StarrocksJar", "file" = "${JAR_URL}");
 
 CREATE GLOBAL FUNCTION gl_how_many_day(string, ...) RETURNS string
-PROPERTIES ("symbol" = "com.glbk.starrocks.udf.GlHowManyDay", "type" = "StarrocksJar", "file" = "${JAR_URL}");
+PROPERTIES ("symbol" = "com.glbk.starrocks.udf.hive.GlHowManyDayHive", "type" = "StarrocksJar", "file" = "${JAR_URL}");
 
 CREATE GLOBAL FUNCTION gl_date_first(string, ...) RETURNS string
-PROPERTIES ("symbol" = "com.glbk.starrocks.udf.GlDateFirst", "type" = "StarrocksJar", "file" = "${JAR_URL}");
+PROPERTIES ("symbol" = "com.glbk.starrocks.udf.hive.GlDateFirstHive", "type" = "StarrocksJar", "file" = "${JAR_URL}");
 
 CREATE GLOBAL FUNCTION gl_date_last(string, ...) RETURNS string
-PROPERTIES ("symbol" = "com.glbk.starrocks.udf.GlDateLast", "type" = "StarrocksJar", "file" = "${JAR_URL}");
+PROPERTIES ("symbol" = "com.glbk.starrocks.udf.hive.GlDateLastHive", "type" = "StarrocksJar", "file" = "${JAR_URL}");
 
 -- gl_now needs two registrations: a varargs UDF needs at least one fixed argument.
 CREATE GLOBAL FUNCTION gl_now() RETURNS string
-PROPERTIES ("symbol" = "com.glbk.starrocks.udf.GlNowNoArg", "type" = "StarrocksJar", "file" = "${JAR_URL}");
+PROPERTIES ("symbol" = "com.glbk.starrocks.udf.hive.GlNowNoArgHive", "type" = "StarrocksJar", "file" = "${JAR_URL}");
 
 CREATE GLOBAL FUNCTION gl_now(string, ...) RETURNS string
-PROPERTIES ("symbol" = "com.glbk.starrocks.udf.GlNow", "type" = "StarrocksJar", "file" = "${JAR_URL}");
+PROPERTIES ("symbol" = "com.glbk.starrocks.udf.hive.GlNowHive", "type" = "StarrocksJar", "file" = "${JAR_URL}");
 
 -- Smoke test (expected values from the original README; gl_now depends on the current date):
 -- SELECT gl_date_delta('2018-09-06','y=+1,m=1,d=1,d=-1');   -- 2018-12-31

@@ -12,28 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package com.glbk.starrocks.udf;
+package com.glbk.starrocks.udf.hive;
 
 import com.glbk.utils.date.DateUtils;
 
 import java.util.Date;
 
-/** StarRocks port of {@code com.glbk.hive.udf.date.gl_date_format}: gl_date_format(date[, format]). */
-public class GlDateFormat {
+/** StarRocks port of {@code com.glbk.hive.udf.date.gl_date_last}: gl_date_last(date, dtype). */
+public class GlDateLastHive {
     public String evaluate(String... args) {
-        if (args.length == 1) {
+        if (args.length == 2) {
             if (args[0] == null) {
                 return null;
             }
-            Date date = DateUtils.parse(args[0].toString());
-            return HiveTextCompat.set(DateUtils.getFormatDate(date, "yyyyMMdd"));
-        } else if (args.length == 2) {
-            if (args[0] == null) {
-                return null;
-            }
-            String format = args[1].toString();
-            Date date = DateUtils.parse(args[0].toString());
-            return HiveTextCompat.set(DateUtils.getFormatDate(date, format));
+            String dt = args[0].toString();
+            String dtype = args[1].toString();
+            Date date = DateUtils.parse(dt);
+            return HiveTextCompat.set(DateUtils.getLastDay(date, dtype));
         } else {
             return null;
         }

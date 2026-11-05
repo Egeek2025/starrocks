@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package com.glbk.starrocks.udf;
+package com.glbk.starrocks.udf.hive;
 
 import com.glbk.utils.date.DateUtils;
 
@@ -20,10 +20,10 @@ import java.util.Date;
 
 /**
  * StarRocks port of {@code com.glbk.hive.udf.date.gl_now} for one or more arguments: gl_now(format).
- * The zero-argument form gl_now() is {@link GlNowNoArg}, because a StarRocks varargs UDF needs at
+ * The zero-argument form gl_now() is {@link GlNowNoArgHive}, because a StarRocks varargs UDF needs at
  * least one fixed argument and a UDF class may declare only one {@code evaluate} method.
  */
-public class GlNow {
+public class GlNowHive {
     public String evaluate(String... args) {
         if (args.length == 0) {
             return DateUtils.getFormatDate(new Date(), "yyyyMMdd");

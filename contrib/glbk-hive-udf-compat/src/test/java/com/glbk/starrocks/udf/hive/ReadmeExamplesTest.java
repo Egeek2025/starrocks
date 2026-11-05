@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package com.glbk.starrocks.udf;
+package com.glbk.starrocks.udf.hive;
 
 import org.junit.jupiter.api.Test;
 
@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 /** The examples from the original glbk-hive-udf README, run against the StarRocks ports. */
 public class ReadmeExamplesTest {
     private static String delta(String... a) {
-        return new GlDateDelta().evaluate(a);
+        return new GlDateDeltaHive().evaluate(a);
     }
 
     @Test
@@ -39,19 +39,19 @@ public class ReadmeExamplesTest {
 
     @Test
     void dateDiff() {
-        GlDateDiff f = new GlDateDiff();
+        GlDateDiffHive f = new GlDateDiffHive();
         // README says -31 / -1 / -12 (date1 - date2); the @Description text saying '31' is wrong.
         assertEquals("-31", f.evaluate("20180101", "20180201", "day"));
         assertEquals("-1", f.evaluate("20170101", "20180201", "year"));
         assertEquals("-13", f.evaluate("20170101", "20180201", "month"));
         assertEquals("-31", f.evaluate("2018-01-01", "2018-02-01", "day"));
-        assertEquals("106", f.evaluate("20190417", new GlDateFirst().evaluate("20190417", "year")));
-        assertEquals("16", f.evaluate("20190417", new GlDateFirst().evaluate("20190417", "quarter")));
+        assertEquals("106", f.evaluate("20190417", new GlDateFirstHive().evaluate("20190417", "year")));
+        assertEquals("16", f.evaluate("20190417", new GlDateFirstHive().evaluate("20190417", "quarter")));
     }
 
     @Test
     void dateFormat() {
-        GlDateFormat f = new GlDateFormat();
+        GlDateFormatHive f = new GlDateFormatHive();
         assertEquals("20180102", f.evaluate("2018-01-02"));
         assertEquals("20180102", f.evaluate("2018-01-02", "yyyyMMdd"));
         assertEquals("20180102", f.evaluate("2018-01-02 03:04:05", "yyyyMMdd"));
@@ -61,17 +61,17 @@ public class ReadmeExamplesTest {
 
     @Test
     void firstLastHowMany() {
-        assertEquals("20190101", new GlDateFirst().evaluate("20190417", "year"));
-        assertEquals("20190401", new GlDateFirst().evaluate("20190417", "quarter"));
-        assertEquals("20190401", new GlDateFirst().evaluate("20190417", "month"));
-        assertEquals("20190414", new GlDateFirst().evaluate("20190417", "week"));
-        assertEquals("20191231", new GlDateLast().evaluate("20190417", "year"));
-        assertEquals("20190630", new GlDateLast().evaluate("20190417", "quarter"));
-        assertEquals("20190430", new GlDateLast().evaluate("20190417", "month"));
-        assertEquals("20190420", new GlDateLast().evaluate("20190417", "week"));
-        assertEquals("107", new GlHowManyDay().evaluate("20190417", "year"));
-        assertEquals("17", new GlHowManyDay().evaluate("20190417", "quarter"));
-        assertEquals("17", new GlHowManyDay().evaluate("20190417", "month"));
-        assertEquals("4", new GlHowManyDay().evaluate("20190417", "week"));
+        assertEquals("20190101", new GlDateFirstHive().evaluate("20190417", "year"));
+        assertEquals("20190401", new GlDateFirstHive().evaluate("20190417", "quarter"));
+        assertEquals("20190401", new GlDateFirstHive().evaluate("20190417", "month"));
+        assertEquals("20190414", new GlDateFirstHive().evaluate("20190417", "week"));
+        assertEquals("20191231", new GlDateLastHive().evaluate("20190417", "year"));
+        assertEquals("20190630", new GlDateLastHive().evaluate("20190417", "quarter"));
+        assertEquals("20190430", new GlDateLastHive().evaluate("20190417", "month"));
+        assertEquals("20190420", new GlDateLastHive().evaluate("20190417", "week"));
+        assertEquals("107", new GlHowManyDayHive().evaluate("20190417", "year"));
+        assertEquals("17", new GlHowManyDayHive().evaluate("20190417", "quarter"));
+        assertEquals("17", new GlHowManyDayHive().evaluate("20190417", "month"));
+        assertEquals("4", new GlHowManyDayHive().evaluate("20190417", "week"));
     }
 }

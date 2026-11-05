@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package com.glbk.starrocks.udf;
+package com.glbk.starrocks.udf.hive;
 
 /** StarRocks port of the zero-argument form {@code gl_now()}; returns today's date as yyyyMMdd. */
-public class GlNowNoArg {
-    private final GlNow delegate = new GlNow();
+public class GlNowNoArgHive {
+    private final GlNowHive delegate = new GlNowHive();
 
     public String evaluate() {
         return delegate.evaluate();

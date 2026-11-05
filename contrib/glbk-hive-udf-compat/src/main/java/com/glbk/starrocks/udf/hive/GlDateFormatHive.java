@@ -12,32 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package com.glbk.starrocks.udf;
+package com.glbk.starrocks.udf.hive;
 
 import com.glbk.utils.date.DateUtils;
 
 import java.util.Date;
 
-/** StarRocks port of {@code com.glbk.hive.udf.date.gl_date_diff}: gl_date_diff(date1, date2[, interval]). */
-public class GlDateDiff {
+/** StarRocks port of {@code com.glbk.hive.udf.date.gl_date_format}: gl_date_format(date[, format]). */
+public class GlDateFormatHive {
     public String evaluate(String... args) {
         if (args.length == 1) {
-            return null;
+            if (args[0] == null) {
+                return null;
+            }
+            Date date = DateUtils.parse(args[0].toString());
+            return HiveTextCompat.set(DateUtils.getFormatDate(date, "yyyyMMdd"));
         } else if (args.length == 2) {
-            if (args[0] == null || args[1] == null) {
+            if (args[0] == null) {
                 return null;
             }
-            Date date1 = DateUtils.parse(args[0].toString());
-            Date date2 = DateUtils.parse(args[1].toString());
-            return String.valueOf(DateUtils.dateDiff(date1, date2, "day"));
-        } else if (args.length == 3) {
-            if (args[0] == null || args[1] == null) {
-                return null;
-            }
-            String interval = args[2].toString();
-            Date date1 = DateUtils.parse(args[0].toString());
-            Date date2 = DateUtils.parse(args[1].toString());
-            return String.valueOf(DateUtils.dateDiff(date1, date2, interval));
+            String format = args[1].toString();
+            Date date = DateUtils.parse(args[0].toString());
+            return HiveTextCompat.set(DateUtils.getFormatDate(date, format));
         } else {
             return null;
         }

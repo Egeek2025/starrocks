@@ -12,23 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package com.glbk.starrocks.udf;
+package com.glbk.starrocks.udf.hive;
 
 import com.glbk.utils.date.DateUtils;
 
-import java.util.Date;
-
-/** StarRocks port of {@code com.glbk.hive.udf.date.gl_date_first}: gl_date_first(date, dtype). */
-public class GlDateFirst {
+/** StarRocks port of {@code com.glbk.hive.udf.date.gl_date_delta}: gl_date_delta(date, offsets[, format]). */
+public class GlDateDeltaHive {
     public String evaluate(String... args) {
-        if (args.length == 2) {
+        if (args.length == 1) {
+            return args[0];
+        } else if (args.length == 2) {
             if (args[0] == null) {
                 return null;
             }
             String dt = args[0].toString();
-            String dtype = args[1].toString();
-            Date date = DateUtils.parse(dt);
-            return HiveTextCompat.set(DateUtils.getFirstDay(date, dtype));
+            String offsets = args[1] == null ? "" : args[1].toString();
+            String format = null;
+            return HiveTextCompat.set(DateUtils.dateDeltaStr(dt, offsets, format));
+        } else if (args.length == 3) {
+            if (args[0] == null) {
+                return null;
+            }
+            String dt = args[0].toString();
+            String offsets = args[1] == null ? "" : args[1].toString();
+            String format = args[2].toString();
+            return HiveTextCompat.set(DateUtils.dateDeltaStr(dt, offsets, format));
         } else {
             return null;
         }
