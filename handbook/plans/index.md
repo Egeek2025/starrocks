@@ -5,6 +5,7 @@ Use this directory for repo-local execution plans that agents can read, update, 
 ## Active Plans
 
 - [Harness Engineering Roadmap](active/2026-03-27-harness-engineering-roadmap.md)
+- [Spark SQL Compatibility (Spark dialect, UDF adapter, case sensitivity)](active/2026-11-05-spark-sql-compat/README.md)
 
 ## Templates
 

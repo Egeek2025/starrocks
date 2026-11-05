@@ -1,0 +1,480 @@
+spark_name,category,class,starrocks_equiv,difference,strategy,difficulty
+coalesce,scalar/misc,A,coalesce,,none,-
+if,scalar/misc,A,if,,none,-
+ifnull,scalar/misc,A,ifnull,,none,-
+nvl,scalar/misc,C,ifnull,same semantics,alias nvl->ifnull in FE function resolver,S
+nvl2,scalar/misc,C,"if(isnotnull(a),b,c)",expr rewrite,"FE rewrite to IF(a IS NOT NULL,b,c)",S
+nullif,scalar/misc,A,nullif,,none,-
+nanvl,scalar/misc,D,"if(isnan(a),b,a)",needs isnan,rewrite after isnan added,S
+isnan,scalar/misc,D,(none),SR has no isnan; NaN comparison semantics differ,new BE scalar fn or rewrite x<>x (verify NaN handling),S
+isnull,scalar/misc,A,isnull,,none,-
+isnotnull,scalar/misc,A,isnotnull,,none,-
+greatest,scalar/misc,B,greatest,Spark skips NULL args; SR returns NULL if any arg NULL,rewrite: greatest(coalesce-safe) i.e. compute over non-null via CASE/array_max(array_filter) or new BE flag,M
+least,scalar/misc,B,least,"same as greatest: Spark skips NULLs, SR returns NULL",same as greatest,M
+when,scalar/misc,A,CASE WHEN,,none (grammar),-
+rand,scalar/misc,B,rand,rand(seed) ignores the seed in SR (non-reproducible); Spark seeded is deterministic per partition anyway,accept; document,S
+random,scalar/misc,B,random,same as rand,alias ok,S
+randn,scalar/misc,D,(none),standard normal,rewrite via sqrt(-2*ln(rand()))*cos(2*pi()*rand()) (Box-Muller) or BE fn,S
+explode,generator,C,unnest (table fn),"Spark: SELECT explode(arr) / LATERAL VIEW explode; SR: FROM t, unnest(arr) AS x or LATERAL JOIN unnest; map explode has no SR equivalent (unnest on map unsupported) ",FE rewrite of generator in SELECT list and LATERAL VIEW to LATERAL JOIN unnest(); map via map_keys/map_values+unnest,L
+explode_outer,generator,C,LEFT JOIN LATERAL unnest(...) ON TRUE (v3.2.7+),outer semantics keep row with NULL,rewrite to LEFT JOIN unnest ON TRUE,L
+posexplode,generator,C,"unnest(arr, generate_series(...)) / unnest + row index",SR unnest has no position output; need arrays_zip/generate_series trick,"FE rewrite: unnest(arr, array_generate(1,len)) minus 1 (Spark pos is 0-based)",L
+posexplode_outer,generator,C,see posexplode with LEFT JOIN,same,FE rewrite,L
+inline,generator,D,unnest(array of struct) + struct field expansion,struct-array explode,FE rewrite to unnest + subfield access,M
+inline_outer,generator,D,see inline,outer variant,FE rewrite,M
+stack,generator,D,"unnest(array(row(..),row(..)))/UNION ALL","stack(n, a,b,c,d) pivot columns->rows","FE rewrite to LATERAL unnest over array of structs, or UNION ALL",M
+acos,scalar/math,A,acos,,none,-
+acosh,scalar/math,D,(none),ln(x+sqrt(x*x-1)),rewrite,S
+asin,scalar/math,A,asin,,none,-
+asinh,scalar/math,D,(none),ln(x+sqrt(x*x+1)),rewrite,S
+atan,scalar/math,A,atan,,none,-
+atan2,scalar/math,A,atan2,,none,-
+atanh,scalar/math,D,(none),0.5*ln((1+x)/(1-x)),rewrite,S
+bin,scalar/math,A,bin,,none,-
+bround,scalar/math,D,(none),HALF_EVEN rounding; SR round is half away from zero,new BE fn (or decimal rounding mode),M
+cbrt,scalar/math,A,cbrt,,none,-
+ceil,scalar/math,B,ceil,"Spark ceil(DOUBLE)->BIGINT, ceil(x,scale) 2-arg form (3.3+) not in SR; decimal result precision differs",S: add 2-arg overload via rewrite,S
+ceiling,scalar/math,B,ceiling,same as ceil,same,S
+cos,scalar/math,A,cos,,none,-
+sec,scalar/math,D,(none),1/cos(x),rewrite,S
+cosh,scalar/math,A,cosh,,none,-
+conv,scalar/math,A,conv,"SR conv(BIGINT or VARCHAR,from,to) ; negative to_base handling differs (minor)",none,S
+degrees,scalar/math,A,degrees,,none,-
+e,scalar/math,A,e,,none,-
+exp,scalar/math,A,exp,,none,-
+expm1,scalar/math,D,(none),exp(x)-1 (precision loss for small x),rewrite or BE,S
+floor,scalar/math,B,floor,"same caveat as ceil: 2-arg floor(x,scale) missing",rewrite,S
+factorial,scalar/math,D,(none),"0..20 -> BIGINT, else NULL",rewrite via CASE lookup or BE,S
+hex,scalar/math,B,hex,Spark hex(BIGINT/BINARY/STRING) ok; case upper same; binary input type mapping,none,S
+hypot,scalar/math,D,sqrt(x*x+y*y),rewrite,rewrite,S
+log,scalar/math,A,log,"log(base,x) same arg order; invalid base->NULL both",none,-
+log10,scalar/math,A,log10,,none,-
+log1p,scalar/math,D,(none),ln(1+x),rewrite,S
+log2,scalar/math,A,log2,,none,-
+ln,scalar/math,A,ln,,none,-
+mod,scalar/math,A,mod,sign follows dividend both,none,-
+negative,scalar/math,A,negative,,none,-
+pi,scalar/math,A,pi,,none,-
+pmod,scalar/math,A,pmod,,none,-
+positive,scalar/math,A,positive,,none,-
+pow,scalar/math,A,pow,,none,-
+power,scalar/math,A,power,,none,-
+radians,scalar/math,A,radians,,none,-
+rint,scalar/math,D,(none),HALF_EVEN to double,new BE fn,S
+round,scalar/math,B,round,Half-up both (half away from zero). Diff: round(DOUBLE) 1-arg returns BIGINT in SR vs DOUBLE in Spark; decimal result precision/scale rules differ; TINYINT/INT input types,FE: add return-type adaptation (cast to double),M
+shiftleft,scalar/math,C,bit_shift_left,,alias,S
+shiftright,scalar/math,C,bit_shift_right,,alias,S
+shiftrightunsigned,scalar/math,C,bit_shift_right_logical,,alias,S
+sign,scalar/math,A,sign,,none,-
+signum,scalar/math,C,sign,,alias,S
+sin,scalar/math,A,sin,,none,-
+csc,scalar/math,D,(none),1/sin(x),rewrite,S
+sinh,scalar/math,A,sinh,,none,-
+str_to_map,scalar/math,B,str_to_map,"Spark str_to_map(text,pairDelim=',',kvDelim=':') regex delims & defaults; SR (str, pairDelim, kvDelim) requires explicit delims",add default args; regex delimiter not supported,S
+sqrt,scalar/math,A,sqrt,,none,-
+tan,scalar/math,A,tan,,none,-
+cot,scalar/math,A,cot,,none,-
+tanh,scalar/math,A,tanh,,none,-
+width_bucket,scalar/math,D,(none),equiwidth_bucket is different,BE fn or CASE rewrite,S
++,scalar/math,B,+,"decimal precision/scale + overflow rules differ (Spark adjusts scale to max 38, SR decimal128); int overflow: Spark wraps silently (non-ANSI), SR errors/NULL; string+int implicit cast",document + session var; decimal adapter,M
+-,scalar/math,B,-,same as +,same,M
+*,scalar/math,B,*,same as +,same,M
+/,scalar/math,B,/,Spark int/int->DOUBLE; SR int/int->DOUBLE ok; decimal/decimal result scale differs; x/0 -> NULL both (non-ANSI),check decimal rules,M
+div,scalar/math,C,DIV / INT_DIV,SR grammar has DIV,none,-
+%,scalar/math,A,%,,none,-
+try_add,scalar/math,D,(none),NULL on overflow,BE fn or rewrite with checked cast to wider type,M
+try_divide,scalar/math,D,a/b (SR returns NULL on /0),SR / already NULL for zero,rewrite to '/',S
+try_subtract,scalar/math,D,(none),NULL on overflow,as try_add,M
+try_multiply,scalar/math,D,(none),NULL on overflow,as try_add,M
+try_element_at,scalar/math,C,element_at,SR element_at returns NULL when out of range,alias (+ index base check),S
+try_avg,scalar/math,C,avg,,alias,S
+try_sum,scalar/math,D,sum,overflow->NULL,rewrite with largeint cast,S
+try_to_binary,scalar/math,D,(none),to_binary returns NULL on failure,BE,S
+try_to_timestamp,scalar/math,C,str_to_date / cast(.. as datetime),returns NULL on failure,FE rewrite w/ format translation,M
+try_aes_decrypt,scalar/math,D,aes_decrypt,NULL on failure; SR aes_decrypt is not exact same modes,BE,M
+approx_count_distinct,agg,B,approx_count_distinct (HLL),Spark HLL++ rsd param (2nd arg) unsupported; results differ numerically (error ~2% vs ~1%),accept 1-arg; drop 2nd arg,S
+avg,agg,A,avg,decimal avg result scale differs,none,S
+corr,agg,A,corr,,none,-
+count,agg,B,count,"count(DISTINCT a,b) supported; count(*) ok; count(a,b) multi-arg (non-distinct, NULL if any null) not in SR",rewrite,S
+count_if,agg,A,count_if,,none,-
+covar_pop,agg,A,covar_pop,,none,-
+covar_samp,agg,A,covar_samp,,none,-
+first,agg,B,any_value,"Spark first(x[,ignoreNulls]) non-deterministic order; SR has only first_value window fn and any_value",rewrite agg first->any_value (ignoreNulls=true -> any_value(case..)); window form first_value(.. ) ignore nulls exists,S
+first_value,agg,B,first_value,window form exists w/ IGNORE NULLS; as aggregate (Spark allows) not in SR,window OK; aggregate -> any_value,S
+any_value,agg,A,any_value,"Spark 3.5 any_value(x[,ignoreNulls])",2nd arg dropped,S
+kurtosis,agg,D,(none),4th central moment,"FE rewrite via sums of powers (sum(x),sum(x^2),sum(x^3),sum(x^4),count) or UDAF",M
+last,agg,B,(none),no last aggregate in SR; last_value window exists,agg -> any_value (order not guaranteed anyway),S
+last_value,agg,B,last_value,same as first_value,window OK,S
+max,agg,A,max,,none,-
+max_by,agg,A,max_by,,none,-
+mean,agg,C,avg,,alias,S
+min,agg,A,min,,none,-
+min_by,agg,A,min_by,,none,-
+percentile,agg,C,percentile_cont,"Spark percentile(col,p[,freq]) exact with linear interpolation == percentile_cont; array p unsupported; freq arg unsupported",alias/rewrite,S
+median,agg,C,"percentile_cont(x,0.5)",,rewrite,S
+skewness,agg,D,(none),3rd moment,rewrite via moments or UDAF,M
+percentile_approx,agg,B,percentile_approx,"3rd arg: Spark accuracy (default 10000, bigger=more accurate) vs SR compression in [2048,10000]; results differ (t-digest vs GK-like); SR supports array p",map accuracy arg->compression or drop,S
+approx_percentile,agg,C,percentile_approx,,alias,S
+histogram_numeric,agg,D,(none),"returns array<struct<x,y>>",UDAF (Java) or skip,L
+stddev,agg,B,stddev_samp,SR stddev = POPULATION stddev (alias stddev_pop); Spark stddev = SAMPLE,"MUST remap: stddev,std,stddev -> stddev_samp",S
+std,agg,B,stddev_samp,same trap,remap to stddev_samp,S
+stddev_pop,agg,A,stddev_pop,,none,-
+stddev_samp,agg,A,stddev_samp,,none,-
+sum,agg,B,sum,decimal sum precision (+10 digits) differs; integer sum -> BIGINT both; overflow wraps (Spark) vs error/NULL,check decimal,S
+variance,agg,B,var_samp,SR variance = POPULATION variance (alias var_pop); Spark variance = SAMPLE,remap variance -> var_samp,S
+var_pop,agg,A,var_pop,,none,-
+var_samp,agg,A,var_samp,,none,-
+collect_list,agg,B,array_agg,SR array_agg includes NULLs; Spark collect_list drops NULLs; ordering undefined both,"rewrite to array_agg(x) FILTER/ array_agg(if x is not null) + array_filter(is not null) or array_remove(arr,NULL)",S
+array_agg,agg,B,array_agg,Spark 3.3+: array_agg == collect_list (drops NULL); SR keeps NULLs,rewrite with NULL filtering,S
+collect_set,agg,B,array_unique_agg,SR array_unique_agg (docs) / array_agg(DISTINCT) ; both drop dupes; NULL handling check,map to array_agg(distinct x) w/ null filter or array_unique_agg,S
+count_min_sketch,agg,D,(none),,skip,L
+every,agg,D,min(cast(x as int))=1 / count_if(not x)=0,bool_and missing in SR,rewrite,S
+bool_and,agg,D,(see every),,rewrite count_if(NOT x)=0 (NULL-aware),S
+any,agg,C,bool_or,,alias,S
+some,agg,C,bool_or,,alias,S
+bool_or,agg,A,bool_or,,none,-
+regr_count,agg,D,(none),,"rewrite count(if(x is not null and y is not null,1,null))",S
+regr_avgx,agg,D,(none),,"rewrite avg(if(y is not null,x,null))",S
+regr_avgy,agg,D,(none),,rewrite,S
+regr_r2,agg,D,(none),,"rewrite corr(y,x)^2",S
+regr_sxx,agg,D,(none),,rewrite regr_count*var_pop(x),S
+regr_sxy,agg,D,(none),,"rewrite regr_count*covar_pop(y,x)",S
+regr_syy,agg,D,(none),,rewrite regr_count*var_pop(y),S
+regr_slope,agg,D,(none),,"rewrite covar_pop(y,x)/var_pop(x)",S
+regr_intercept,agg,D,(none),,rewrite avg(y)-slope*avg(x),M
+mode,agg,D,(none),most frequent value,rewrite via subquery/window or UDAF,M
+hll_sketch_agg,agg,D,hll_raw_agg/ds_hll_accumulate (Apache DataSketches),sketch binary formats differ (DataSketches vs SR HLL),map to ds_hll_*; binary incompatible with Spark,L
+hll_union_agg,agg,D,ds_hll_combine,same,map,L
+hll_sketch_estimate,scalar/misc,D,ds_hll_estimate,same,map,L
+hll_union,scalar/misc,D,ds_hll_combine (scalar),same,map,L
+ascii,scalar/string,A,ascii,,none,-
+char,scalar/string,B,char,Spark char(n)=chr(n mod 256); SR char(n)? returns char per code point (verify),check,S
+chr,scalar/string,D,char,alias if SR char matches (n mod 256 semantic differs),alias + wrapper,S
+contains,scalar/string,C,"instr(a,b)>0 / locate","Spark 3.3+ contains(a,b)",rewrite,S
+startswith,scalar/string,C,starts_with,,alias,S
+endswith,scalar/string,C,ends_with,,alias,S
+base64,scalar/string,C,to_base64,,alias (binary input ok),S
+bit_length,scalar/string,D,length*8 (octet),8*octet_length,rewrite,S
+char_length,scalar/string,A,char_length,,none,-
+character_length,scalar/string,A,character_length,,none,-
+concat_ws,scalar/string,A,concat_ws,both skip NULL args; Spark accepts array<string> args and SR has ARRAY overload,none,-
+decode,scalar/string,B,(none),"Spark decode(bin,charset) AND Oracle-style decode(expr,search,result,...) both; SR has none",rewrite Oracle form to CASE; charset form to convert_from(not avail),M
+elt,scalar/string,D,(none),"elt(n,a,b,...) = array[n]",rewrite array_element/CASE,S
+encode,scalar/string,D,(none),string->binary charset,"BE (utf-8 only) / rewrite to to_binary(x,'utf8')",S
+find_in_set,scalar/string,A,find_in_set,,none,-
+format_number,scalar/string,D,(none),"format_number(x,d) '1,234.57' half-even rounding",BE fn (or money_format-ish rewrite),M
+format_string,scalar/string,D,(none),printf-style,"BE fn (java.util.Formatter semantics), or Java UDF",M
+to_number,scalar/string,D,(none),format-mask parser,Java UDF,L
+try_to_number,scalar/string,D,(none),as to_number,Java UDF,L
+to_char,scalar/string,D,date_format / format conv,"to_char(num or ts, fmt)",BE or rewrite w/ format translation,M
+to_varchar,scalar/string,D,to_char alias,,,M
+get_json_object,scalar/string,B,get_json_object (alias of get_json_string),"returns VARCHAR; JSONPath subset ($.a.b[0], $['a']); Spark returns JSON text for objects/arrays, SR get_json_string returns string of the value (nested -> JSON text?). Wildcard/filters unsupported; invalid JSON -> NULL both",test against Spark corpus; fall back to json_query,M
+initcap,scalar/string,B,initcap,Spark initcap lowercases rest and capitalizes after whitespace only; SR similar (verify non-alnum separators),test,S
+instr,scalar/string,A,instr,"1-based, 0 not found; same",none,-
+lcase,scalar/string,A,lcase,,none,-
+length,scalar/string,B,length,SR length() = BYTES (MySQL style) ; Spark length = characters (bytes for binary),remap to char_length for strings,S
+len,scalar/string,C,char_length,,alias (see length),S
+levenshtein,scalar/string,D,(none),edit distance (3.5 has optional threshold),BE fn,M
+luhn_check,scalar/string,D,(none),,BE/rewrite,S
+like,scalar/string,B,like,ESCAPE clause: Spark default escape '\'; SR default '\' too; LIKE ANY/ALL (3.0+) unsupported,rewrite to OR/AND,S
+ilike,scalar/string,A,ilike,,none,-
+lower,scalar/string,A,lower,,none,-
+octet_length,scalar/string,C,length (bytes),,alias to SR length,S
+locate,scalar/string,A,locate,"locate(substr,str[,pos]) 1-based; Spark locate(sub,str,0)=0 ; SR pos semantics similar",test pos<=0,S
+lpad,scalar/string,B,lpad,"Spark lpad(str,len,pad) truncates when len<length like SR; pad default ' '; SR 2-arg ok; empty pad -> SR NULL vs Spark returns str",S,S
+ltrim,scalar/string,B,ltrim,"Spark ltrim(trimStr, str) 2-arg ORDER reversed vs SR ltrim(str, chars); also TRIM(LEADING c FROM s) grammar",parser rewrite,S
+json_tuple,generator,D,get_json_string x N (+ LATERAL VIEW),generator returning many columns,FE rewrite to multiple get_json_object,M
+position,scalar/string,C,locate/strpos,"POSITION(sub IN str) syntax or position(sub,str)",rewrite to locate,S
+printf,scalar/string,D,(see format_string),,BE,M
+regexp_extract,scalar/string,B,regexp_extract,"Spark idx default=1 (2-arg form ok), SR requires 3rd arg; Java regex vs RE2: no lookahead/lookbehind/backrefs; non-match returns '' in both; idx=0 whole match; case-sensitivity same",add default idx=1; regex dialect translation/check; accept limitation,M
+regexp_extract_all,scalar/string,B,regexp_extract_all,Spark idx default=1; SR needs pos; RE2 vs Java,add default,M
+regexp_replace,scalar/string,B,regexp_replace,"replacement syntax: Spark uses $1 backrefs (Java), SR uses \1 (RE2); Spark 4th arg position(3.5)",translate $n -> \n in replacement; Java->RE2 regex check,M
+repeat,scalar/string,A,repeat,,none,-
+replace,scalar/string,B,replace,"Spark replace(str,search) 2-arg form (replace with empty) missing in SR 3-arg only",add overload,S
+overlay,scalar/string,D,(none),overlay(str PLACING r FROM pos [FOR len]),rewrite concat(substr..),S
+rlike,scalar/string,C,regexp / RLIKE operator,"RE2 vs Java regex; Spark rlike = partial match (find), SR regexp = partial match too",none,S
+regexp_like,scalar/string,C,regexp,,alias,S
+regexp,scalar/string,A,regexp,RE2 vs Java regex dialect,none,S
+rpad,scalar/string,B,rpad,same as lpad,-,S
+rtrim,scalar/string,B,rtrim,same as ltrim arg order,-,S
+sentences,scalar/string,D,(none),tokenize into words,skip/Java UDF,M
+soundex,scalar/string,D,(none),,BE fn,S
+space,scalar/string,A,space,,none,-
+split,scalar/string,B,split,"Spark split(str, REGEX [,limit]) vs SR split(str, LITERAL delimiter) (no limit); trailing empty strings kept in Spark(limit=-1); SR split('abc','') -> chars; Spark 'a1b2c' split by '[0-9]' works only in Spark",if delimiter is regex-metachar-free -> split; else regexp_split (SR has regexp_split? docs list regexp_split) ; limit via array_slice,M
+split_part,scalar/string,B,split_part,"Spark split_part(str, delim, partNum) 1-based; out-of-range -> '' in Spark (NULL in SR?); negative index supported both (3.5 neg ok)",test,S
+substr,scalar/string,B,substr,"Spark substr(s,0,n) treats 0 as 1; SR pos=0 returns '' ; negative start ok both",rewrite pos 0->1 (if literal) or CASE,S
+substring,scalar/string,B,substring,same as substr,-,S
+left,scalar/string,A,left,,none,-
+right,scalar/string,A,right,,none,-
+substring_index,scalar/string,A,substring_index,,none,-
+translate,scalar/string,A,translate,SR translate vs Spark (extra from-chars deleted in Spark),test,S
+trim,scalar/string,B,trim,"Spark TRIM(BOTH/LEADING/TRAILING c FROM s) syntax; trim(c FROM s); SR trim(str[,chars]) fn form",parser rewrite,S
+btrim,scalar/string,C,"trim(str, chars)",,"alias, arg order check (Spark btrim(str[,trimStr]))",S
+ucase,scalar/string,A,ucase,,none,-
+unbase64,scalar/string,C,from_base64,,alias,S
+unhex,scalar/string,A,unhex,,none,-
+upper,scalar/string,A,upper,,none,-
+xpath,scalar/string,D,(none),XML,skip (Java UDF),L
+xpath_boolean,scalar/string,D,(none),,skip,L
+xpath_double,scalar/string,D,(none),,skip,L
+xpath_number,scalar/string,D,(none),,skip,L
+xpath_float,scalar/string,D,(none),,skip,L
+xpath_int,scalar/string,D,(none),,skip,L
+xpath_long,scalar/string,D,(none),,skip,L
+xpath_short,scalar/string,D,(none),,skip,L
+xpath_string,scalar/string,D,(none),,skip,L
+regexp_count,scalar/string,A,regexp_count,,none,S
+regexp_substr,scalar/string,C,"regexp_extract(s,p,0)","Spark 3.4+ regexp_substr(str,regexp) first match",rewrite idx=0,S
+regexp_instr,scalar/string,D,(none),position of regex match (3.4+),rewrite via regexp_extract+locate,M
+url_encode,scalar/url,A,url_encode,,none,-
+url_decode,scalar/url,A,url_decode,,none,-
+parse_url,scalar/url,B,parse_url,"Spark parse_url(url,part[,key]) 3-arg QUERY key form; SR 2-arg; SR part names",add key overload or rewrite to url_extract_parameter,S
+add_months,scalar/datetime,B,add_months,"returns DATE in Spark, DATETIME in SR; end-of-month rule: Spark 3.x does NOT pin to month end (2022-02-28+1m=2022-03-28); SR same except docs",cast result to date,S
+current_date,scalar/datetime,A,current_date,,none,-
+curdate,scalar/datetime,A,curdate,,none,-
+current_timestamp,scalar/datetime,B,current_timestamp,type TIMESTAMP w/ microsecond; SR DATETIME seconds precision (ms in newer),S,S
+current_timezone,scalar/datetime,A,current_timezone,,none,-
+localtimestamp,scalar/datetime,A,localtimestamp,,none,-
+datediff,scalar/datetime,A,datediff,"datediff(end,start) same; Spark 3-arg datediff(unit,..) is 4.0",none,-
+date_diff,scalar/datetime,C,datediff,,alias (3.4+),S
+date_add,scalar/datetime,B,date_add / days_add,"Spark date_add(date, N) returns DATE; SR date_add(d,INT) returns DATETIME. SR also accepts INTERVAL form; Spark also accepts string date; Spark accepts negative N",cast result to DATE,S
+dateadd,scalar/datetime,B,date_add,"Spark dateadd(unit,n,ts)=timestampadd(3.4+) or dateadd(date,n) 2-arg synonym",map by arity: 2-arg->date_add; 3-arg->timestampadd,S
+date_format,scalar/datetime,B,date_format,"Spark uses Java DateTimeFormatter patterns (yyyy-MM-dd HH:mm:ss, EEE, a); SR uses MySQL specifiers (%Y-%m-%d %H:%i:%s); BE only special-cases yyyyMMdd/yyyy-MM-dd/yyyy-MM-dd HH:mm:ss",FE translate constant pattern Java->MySQL (rewriter) ; non-constant: reject or UDF,M
+date_sub,scalar/datetime,B,date_sub,same caveat as date_add (DATE vs DATETIME),-,S
+day,scalar/datetime,A,day,,none,-
+dayofyear,scalar/datetime,A,dayofyear,,none,-
+dayofmonth,scalar/datetime,A,dayofmonth,,none,-
+from_unixtime,scalar/datetime,B,from_unixtime,Spark default fmt yyyy-MM-dd HH:mm:ss same; custom fmt Java vs MySQL (BE special-cases few); timezone: session tz both,translate pattern,M
+from_utc_timestamp,scalar/datetime,D,"convert_tz(ts,'UTC',tz)",,rewrite,S
+hour,scalar/datetime,A,hour,,none,-
+last_day,scalar/datetime,B,last_day,Spark has no unit arg; returns DATE ok,none,S
+minute,scalar/datetime,A,minute,,none,-
+month,scalar/datetime,A,month,,none,-
+months_between,scalar/datetime,D,(none),"fractional months (31-day month, roundOff=true)",BE fn or rewrite using months_diff+days,M
+next_day,scalar/datetime,B,next_day,Spark day names case-insensitive (Mon/Monday); SR case-sensitive & error on invalid,wrap lower->initcap,S
+now,scalar/datetime,A,now,,none,-
+quarter,scalar/datetime,A,quarter,,none,-
+second,scalar/datetime,A,second,,none,-
+to_timestamp,scalar/datetime,B,str_to_date / cast,"to_timestamp(str[,fmt]) Java fmt; unparsable ->NULL (non-ANSI)",rewrite w/ fmt translation,M
+to_date,scalar/datetime,B,to_date / str_to_date,"Spark to_date(str[,fmt]) with Java fmt & string parse; SR to_date(DATETIME) only 1-arg",rewrite: 1-arg -> to_date(cast(x as datetime)) ; 2-arg -> date(str_to_date(translate fmt)),M
+to_binary,scalar/datetime,B,to_binary,"fmt 'hex','utf-8','base64' vs SR(VARCHAR[,fmt]) supported formats differ",test,S
+to_unix_timestamp,scalar/datetime,C,unix_timestamp,,alias,S
+to_utc_timestamp,scalar/datetime,D,"convert_tz(ts,tz,'UTC')",,rewrite,S
+to_timestamp_ntz,scalar/datetime,D,cast as datetime,,rewrite,S
+to_timestamp_ltz,scalar/datetime,D,cast as datetime,,rewrite,S
+trunc,scalar/datetime,B,date_trunc,"Spark trunc(date, fmt) (date first, fmt 'YEAR','MM','QUARTER','WEEK'); date_trunc(fmt, ts) fmt first; SR date_trunc(fmt, ts) only","rewrite trunc(d,f)->date_trunc(map f,d) cast date; MM->month etc.",S
+date_trunc,scalar/datetime,B,date_trunc,"fmt first both; Spark fmt aliases 'YYYY','YY','MON','MM','DD','DAYOFYEAR' etc; week starts Monday both",map aliases,S
+unix_timestamp,scalar/datetime,B,unix_timestamp,"Spark unix_timestamp(str[,fmt]) default fmt yyyy-MM-dd HH:mm:ss, Java pattern; SR 1-arg takes DATETIME and out-of-range (<1970,>2038) -> 0; 2-arg uses MySQL fmt",translate pattern; check 2038 limit (64-bit variants exist),M
+dayofweek,scalar/datetime,A,dayofweek,1=Sunday both,none,-
+weekday,scalar/datetime,A,weekday,0=Monday both,none,-
+weekofyear,scalar/datetime,B,weekofyear,ISO week both?(Spark ISO 8601 week; SR week_iso exists; weekofyear is ISO per MySQL),verify,S
+year,scalar/datetime,A,year,,none,-
+window,scalar/datetime,D,time_slice / date_slice,"tumbling/sliding window TVF-like grouping; returns struct<start,end>",FE rewrite tumbling->time_slice start + interval; sliding->L,L
+session_window,scalar/datetime,D,(none),session window,window fn emulation,L
+window_time,scalar/datetime,D,(none),,skip,M
+make_date,scalar/datetime,D,makedate? (different),"make_date(y,m,d); SR makedate(year, dayofyear)",rewrite str_to_date(concat_ws),S
+make_timestamp,scalar/datetime,D,(none),rewrite concat + str_to_date,rewrite,M
+make_timestamp_ntz,scalar/datetime,D,(none),,rewrite,M
+make_timestamp_ltz,scalar/datetime,D,(none),,rewrite,M
+make_interval,scalar/datetime,D,(none),interval type,skip / support only in date arithmetic,L
+make_dt_interval,scalar/datetime,D,(none),,skip,L
+make_ym_interval,scalar/datetime,D,(none),,skip,L
+extract,scalar/datetime,B,extract / year()..,EXTRACT(field FROM x) grammar: SR supports EXTRACT? (g4 has extract); fields DOW/DOY/WEEK etc,test,S
+date_part,scalar/datetime,C,extract-like,rewrite per field,rewrite,S
+datepart,scalar/datetime,C,date_part,,rewrite,S
+date_from_unix_date,scalar/datetime,D,"date_add('1970-01-01', n)",,rewrite,S
+unix_date,scalar/datetime,D,"datediff(d,'1970-01-01')",,rewrite,S
+timestamp_seconds,scalar/datetime,C,from_unixtime / cast,returns TIMESTAMP (not string),rewrite to cast(from_unixtime(x) as datetime),S
+timestamp_millis,scalar/datetime,D,(none),rewrite from_unixtime(x/1000) + ms,rewrite,S
+timestamp_micros,scalar/datetime,D,(none),,rewrite,S
+unix_seconds,scalar/datetime,C,unix_timestamp(ts),,rewrite,S
+unix_millis,scalar/datetime,D,unix_timestamp*1000 + ms,,rewrite,S
+unix_micros,scalar/datetime,D,(none),,rewrite,S
+convert_timezone,scalar/datetime,C,convert_tz,"Spark 3.4 convert_timezone([src,]tgt,ts)",arg-order rewrite,S
+array,scalar/collection,A,[..] / array(),"array(1,2) ok; empty array() type",none,S
+array_contains,scalar/collection,B,array_contains,Spark returns NULL if element not found but array contains NULL; SR returns 1/0 (boolean int),test null semantic,S
+arrays_overlap,scalar/collection,B,arrays_overlap,NULL semantic differs; SR requires same element types,test,S
+array_insert,scalar/collection,D,(none),3.4+ insert at pos (neg supported),rewrite w/ array_concat+array_slice,M
+array_intersect,scalar/collection,B,array_intersect,SR is multiset? (SR dedupes? check); element order unspecified,test,S
+array_join,scalar/collection,A,array_join,null_replace third arg same,none,-
+array_position,scalar/collection,B,array_position,"returns BIGINT 1-based, 0 if not found same; NULL handling",test,S
+array_size,scalar/collection,C,array_length,,alias,S
+array_sort,scalar/collection,B,array_sort,"Spark array_sort(arr[,cmp]) puts NULLs LAST; SR puts NULLs FIRST; lambda comparator form (x,y)->..: SR 4.0 supports",wrap to move NULLs last,S
+array_except,scalar/collection,D,(none),SR lacks (docs: array_difference is different!),"rewrite array_filter(a, x -> !array_contains(b,x)) + distinct",M
+array_union,scalar/collection,D,"array_distinct(array_concat(a,b))",,rewrite,S
+array_compact,scalar/collection,D,array_filter(x -> x is not null),,rewrite,S
+map,scalar/collection,A,map{..}/map(),"map(k1,v1,k2,v2) vs SR map{k:v} and map(k1,v1,...) both?",check,S
+named_struct,scalar/collection,A,named_struct,,none,-
+element_at,scalar/collection,B,element_at,"Spark array element_at 1-based, negative index counts from end, out-of-range ->NULL (non-ANSI); SR positive only. Spark arr[i] operator is 0-BASED (!), SR [] is 1-based","FE rewrite subscript on arrays: arr[i] -> element_at(arr,i+1); negative index CASE",M
+map_contains_key,scalar/collection,D,(none),map_keys + array_contains,rewrite,S
+map_from_arrays,scalar/collection,A,map_from_arrays,,none,-
+map_keys,scalar/collection,A,map_keys,,none,-
+map_values,scalar/collection,A,map_values,,none,-
+map_entries,scalar/collection,A,map_entries,,none,-
+map_from_entries,scalar/collection,D,(none),"array<struct<k,v>> -> map",rewrite via map_from_arrays over unnest/ transform,M
+map_concat,scalar/collection,A,map_concat,,none,-
+size,scalar/collection,B,array_length / map_size / cardinality,"Spark size(NULL) = -1 (legacy sizeOfNull=true default), SR NULL; works on arrays and maps","rewrite size(x)->coalesce(cardinality(x),-1)",S
+slice,scalar/collection,B,array_slice,"Spark slice(arr,start,len) supports negative start (from end); SR offset>=1 only",rewrite,S
+cardinality,scalar/collection,A,cardinality,,size NULL semantic,S
+arrays_zip,scalar/collection,B,arrays_zip,"Spark returns array<struct<0,1..>> field names 0,1 ; SR struct names differ",test,S
+sort_array,scalar/collection,B,array_sort,"sort_array(arr[,asc]) asc: NULLs first; desc: NULLs last; SR array_sort asc only (+array_sortby / reverse)",rewrite: asc->array_sort; desc->reverse(array_sort(..)),S
+shuffle,scalar/collection,D,(none),random permutation,BE or skip,S
+array_min,scalar/collection,A,array_min,NULL ignoring semantic check,test,S
+array_max,scalar/collection,A,array_max,,test,S
+array_append,scalar/collection,A,array_append,,none,-
+reverse,scalar/collection,A,reverse,,none,-
+concat,scalar/collection,B,concat,Spark concat: any NULL -> NULL (strings) same as SR; also concats ARRAYs/BINARY (SR concat is varchar only; array_concat for arrays),dispatch by arg type: array->array_concat,S
+flatten,scalar/collection,C,array_flatten,,alias,S
+sequence,scalar/collection,C,array_generate / generate_series,"Spark sequence(start,stop[,step]) for ints and dates/timestamps (+interval); SR array_generate ints only",map int; date via rewrite,M
+array_repeat,scalar/collection,A,array_repeat,,none,-
+array_remove,scalar/collection,A,array_remove,,none,-
+array_prepend,scalar/collection,D,"array_concat([x], arr)",,rewrite,S
+array_distinct,scalar/collection,A,array_distinct,,none,-
+transform,scalar/collection,C,array_map,"Spark transform(arr, x -> f) ; SR array_map(x -> f, arr) lambda FIRST (arg order reversed); index variant (x,i)->",FE reorder args,S
+map_filter,scalar/collection,A,map_filter,"SR map_filter(map, array<bool>) differs: Spark takes lambda (k,v)->bool; SR docs map_filter(map, array_boolean) - lambda form via map_apply?",check,M
+filter,scalar/collection,C,array_filter,"Spark filter(arr, x->pred) ; SR array_filter(arr, x->..) or array_filter(x->..,arr) (supports lambda forms)",reorder if needed,S
+exists,scalar/collection,C,any_match,"exists(arr, x->pred) three-valued logic",rewrite,S
+forall,scalar/collection,C,all_match,,rewrite,S
+aggregate,scalar/collection,D,(none),fold with lambda (reduce),rewrite for common patterns (sum) else UDF; no generic fold in SR,L
+reduce,scalar/collection,D,(see aggregate),,same,L
+transform_values,scalar/collection,A,transform_values,"lambda (k,v)->",check,S
+transform_keys,scalar/collection,A,transform_keys,,check,S
+map_zip_with,scalar/collection,D,(none),,skip,L
+zip_with,scalar/collection,D,"array_map with 2 arrays: array_map((x,y)->.., a, b)",SR array_map supports multiple arrays,rewrite,S
+get,scalar/collection,D,"element_at(arr,idx+1)",0-based get,rewrite,S
+assert_true,scalar/misc,A,assert_true,,none,-
+raise_error,scalar/misc,A,raise_error,,none,-
+crc32,scalar/misc,A,crc32,SR input VARCHAR; Spark binary; returns BIGINT both,cast,S
+md5,scalar/misc,A,md5,,none,-
+uuid,scalar/misc,A,uuid,,none,-
+hash,scalar/misc,B,murmur_hash3_32,"Spark hash() = Murmur3_x86_32 seed 42 chained over columns with type-specific hashing (ints as 4/8 bytes, strings utf8, NULL skip); SR murmur_hash3_32 uses seed 104729 and VARCHAR inputs only -> numerically different. Bucketing/partitioning compatibility broken",new BE fn spark_hash(...) implementing Spark algo,L
+xxhash64,scalar/misc,B,xx_hash64 (xxhash64),"Spark seed 42, type-specific hashing; SR XXHASH64_SEED=0, varchar only",new BE fn,L
+sha,scalar/misc,D,(none),alias of sha1; SR has no sha1 (only sha2 + sm3),BE: sha1 fn (or UDF),S
+sha1,scalar/misc,D,(none),SR has only sha2 (224/256/384/512) + sm3,BE fn,S
+sha2,scalar/misc,A,sha2,bit length 0/224/256/384/512 ; invalid ->NULL,test,S
+aes_encrypt,scalar/misc,B,aes_encrypt,"Spark aes_encrypt(expr,key[,mode,padding,iv,aad]) default AES-GCM; SR default mode AES_128_ECB; output format differ",BE/UDF + doc,M
+aes_decrypt,scalar/misc,B,aes_decrypt,same,-,M
+spark_partition_id,scalar/misc,E,(none),no Spark partition concept,emulate: constant 0 or hash(bucket id),S
+input_file_name,scalar/misc,E,(none),SR has no per-row file name virtual column that is verified,emulate via hidden column ($path) if available else '',M
+input_file_block_start,scalar/misc,E,(none),,return -1,S
+input_file_block_length,scalar/misc,E,(none),,return -1,S
+monotonically_increasing_id,scalar/misc,E,(none),unique increasing 64-bit id (partition<<33 + n),emulate row_number() over () cast bigint (needs global sort) or uuid_numeric; cheap: (be_id<<33)+ per-fragment sequence BE fn,M
+current_database,scalar/misc,C,database,,alias,S
+current_schema,scalar/misc,C,database,,alias,S
+current_catalog,scalar/misc,C,catalog,,alias,S
+current_user,scalar/misc,A,current_user,,none,-
+user,scalar/misc,A,user,,none,-
+reflect,scalar/misc,D,(none),call JVM static method,not supportable (map common ones) ,L
+java_method,scalar/misc,D,(none),,same,L
+version,scalar/misc,B,version,returns different string (5.1.0 StarRocks vs Spark version),S,S
+typeof,scalar/misc,D,(none),type name string,FE constant-fold (analyzer) ,S
+equal_null,scalar/misc,C,<=>,,alias,S
+nth_value,window,D,(none),"window fn nth_value(x,n)",FE window rewrite: first_value over frame? or new BE window fn,M
+grouping,scalar/grouping,A,grouping,,none,-
+grouping_id,scalar/grouping,A,grouping_id,,none,-
+lead,window,A,lead,ignoreNulls opt,none,S
+lag,window,A,lag,,none,-
+row_number,window,A,row_number,,none,-
+cume_dist,window,A,cume_dist,,none,-
+ntile,window,A,ntile,,none,-
+rank,window,A,rank,,none,-
+dense_rank,window,A,dense_rank,,none,-
+percent_rank,window,A,percent_rank,,none,-
+and,operator,A,AND,,none,-
+in,operator,A,IN,,none,-
+not,operator,A,NOT,,none,-
+or,operator,A,OR,double-pipe means OR in SR by default; Spark double-pipe = concat. set sql_mode PIPES_AS_CONCAT,set sql_mode on session,S
+<=>,operator,A,<=>,,none,-
+=,operator,B,=,string vs number implicit casts differ (Spark casts string->double/ int; SR string->number); date-vs-string compare,document; cast rules adapter,M
+==,operator,C,=,,alias in parser,S
+>,operator,B,>,as =,-,M
+>=,operator,B,>=,as =,-,M
+<,operator,B,<,as =,-,M
+<=,operator,B,<=,as =,-,M
+!,operator,C,NOT,,parser,S
+&,scalar/bitwise,A,&,,none,-
+~,scalar/bitwise,A,~,,none,-
+|,scalar/bitwise,A,bitwise-or operator,,none,-
+^,scalar/bitwise,A,^,,none,-
+bit_count,scalar/bitwise,D,(none),popcount,BE fn,S
+bit_and,agg,D,(none),aggregate bitwise and,BE agg or UDAF (SR has bitand scalar only),M
+bit_or,agg,D,(none),aggregate,BE agg,M
+bit_xor,agg,D,(none),aggregate,BE agg,M
+bit_get,scalar/bitwise,D,(none),(x>>pos)&1,rewrite,S
+getbit,scalar/bitwise,D,(none),,rewrite,S
+bitmap_bucket_number,scalar/bitmap,D,(none),,skip,M
+bitmap_bit_position,scalar/bitmap,D,(none),,skip,M
+bitmap_construct_agg,agg,D,bitmap_agg,"semantics differ (Spark bitmap = fixed 32KiB bit array, not roaring)",skip,M
+bitmap_count,scalar/bitmap,B,bitmap_count,Spark bitmap_count(binary) on its own fixed bitmap format; SR bitmap_count on BITMAP type,incompatible formats,M
+bitmap_or_agg,agg,D,bitmap_union,format differs,skip,M
+to_json,scalar/json,B,to_json,"Spark to_json(struct/map/array, options) -> JSON text; SR to_json(map/struct) -> JSON type",cast to string,S
+from_json,scalar/json,D,(none),"from_json(str, schema) -> struct; SR parse_json + cast / json_query/get_json_*","FE rewrite: from_json(s,'a INT, b STRING') -> row(get_json_int(s,'$.a'),get_json_string(s,'$.b')) for flat schema; nested -> cast(parse_json as struct) (verify)",L
+schema_of_json,scalar/json,D,(none),infer schema literal,FE constant-fold or skip,M
+json_array_length,scalar/json,C,json_length,,alias (arg must be json array),S
+json_object_keys,scalar/json,C,json_keys,,alias,S
+cast,scalar/cast,B,CAST,"cast semantics: string->int lenient (Spark: '1.5'->1, 'abc'->NULL); SR strict & different on overflow / invalid; string->date accepts different formats; double->string repr ('1.0E10' vs '1.0E10'); int->boolean; timestamp<->long unit; decimal rounding",build compat cast adapter per type pair; start with explicit cast set,L
+boolean,scalar/cast,C,CAST(..AS BOOLEAN),,parser rewrite,S
+tinyint,scalar/cast,C,CAST(..AS TINYINT),,parser rewrite,S
+smallint,scalar/cast,C,CAST,,parser,S
+int,scalar/cast,C,CAST,,parser,S
+bigint,scalar/cast,C,CAST,,parser,S
+float,scalar/cast,C,CAST,,parser,S
+double,scalar/cast,C,CAST,,parser,S
+decimal,scalar/cast,C,CAST,,parser,S
+date,scalar/cast,C,date / CAST,,parser,S
+timestamp,scalar/cast,C,CAST AS DATETIME,,parser; type name TIMESTAMP -> DATETIME,S
+binary,scalar/cast,C,CAST AS VARBINARY,,parser,S
+string,scalar/cast,C,CAST AS STRING/VARCHAR,,parser,S
+mask,scalar/mask,D,(none),"mask(str,upper,lower,digit,other)",BE fn / rewrite via regexp_replace,S
+from_csv,scalar/csv,D,(none),,skip,L
+schema_of_csv,scalar/csv,D,(none),,skip,L
+to_csv,scalar/csv,D,(none),,skip,L
+abs,scalar/misc,A,abs,,none,-
+percentile_cont,agg,B,percentile_cont,"Spark syntax percentile_cont(p) WITHIN GROUP (ORDER BY x); SR percentile_cont(x,p)",parser rewrite,S
+percentile_disc,agg,B,percentile_disc,same syntax difference,parser rewrite,S
+listagg,agg,C,group_concat / string_agg,"listagg(x[,sep]) WITHIN GROUP (ORDER BY); SR group_concat(x ORDER BY .. SEPARATOR ..)",parser rewrite,S
+string_agg,agg,C,string_agg,SR has string_agg,alias,S
+try_parse_json,scalar/json,D,parse_json (NULL on fail),VARIANT type; SR has JSON/VARIANT types,"map to json type, wrap",M
+parse_json,scalar/json,B,parse_json,Spark returns VARIANT; SR parse_json returns JSON,map,M
+variant_get,scalar/json,B,get_variant_* / variant_query,path syntax,map,M
+try_variant_get,scalar/json,D,variant_query,,map,M
+schema_of_variant,scalar/json,D,(none),-,skip,M
+is_variant_null,scalar/json,A,is_variant_null,,none,S
+variant_explode,scalar/json,D,json_each/unnest,-,rewrite,M
+to_variant_object,scalar/json,D,(none),-,skip,M
+try_url_decode,scalar/url,D,url_decode (SR errors?),-,wrap,S
+try_reflect,scalar/misc,D,(none),-,skip,L
+randstr,scalar/misc,D,(none),random string,BE,S
+uniform,scalar/math,D,rand()*(max-min)+min,-,rewrite,S
+dayname,scalar/datetime,A,dayname,English names; SR dayname returns same,none,S
+monthname,scalar/datetime,A,monthname,,none,S
+try_mod,scalar/math,D,mod (NULL on /0 already),-,alias,S
+try_make_timestamp,scalar/datetime,D,(none),-,rewrite,M
+try_make_interval,scalar/datetime,D,(none),-,skip,L
+make_time,scalar/datetime,D,(none),TIME type,rewrite,M
+to_time,scalar/datetime,D,(none),-,rewrite,M
+time_diff,scalar/datetime,D,timediff,-,map,M
+time_trunc,scalar/datetime,D,(none),-,rewrite,M
+current_time,scalar/datetime,D,curtime,-,alias,S
+collation,scalar/string,E,(none),collation concept,N/A,-
+collations,scalar/string,E,(none),-,N/A,-
+is_valid_utf8,scalar/string,D,(none),-,BE,S
+make_valid_utf8,scalar/string,D,(none),-,BE,S
+validate_utf8,scalar/string,D,(none),-,BE,S
+try_validate_utf8,scalar/string,D,(none),-,BE,S
+quote,scalar/string,D,(none),-,rewrite,S
+schema_of_xml,scalar/xml,D,(none),-,skip,L
+from_xml,scalar/xml,D,(none),-,skip,L
+to_xml,scalar/xml,D,(none),-,skip,L
+approx_top_k,agg,B,approx_top_k,result struct shape differs,map,M
+approx_top_k_accumulate,agg,D,(none),sketch,skip,L
+approx_top_k_combine,agg,D,(none),-,skip,L
+approx_top_k_estimate,agg,D,(none),-,skip,L
+kll_sketch_agg_bigint,agg,D,(none),DataSketches KLL,skip,L
+theta_sketch_agg,agg,D,ds_theta_accumulate,DataSketches theta; binary may be compatible with ds_theta_*,map,M
+theta_union_agg,agg,D,ds_theta_combine,-,map,M
+theta_intersection_agg,agg,D,ds_theta_intersect_cond_agg,-,map,M
+theta_sketch_estimate,scalar/misc,D,ds_theta_estimate,-,map,S
+max_by_n,agg,D,max_by (2 args only),-,rewrite,M
+min_by_n,agg,D,min_by,-,rewrite,M
+bit_reverse,scalar/bitwise,D,(none),-,BE,S
+||,operator,B,concat,Default sql_mode: double-pipe is logical OR in SR but string concat in Spark,set sql_mode PIPES_AS_CONCAT per session (lexer supports it),S
