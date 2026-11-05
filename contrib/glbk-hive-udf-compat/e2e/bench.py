@@ -18,7 +18,7 @@ import pymysql
 DB = "glbk_bench"
 
 # name, UDF expression, built-in expression with the same result on well-formed yyyyMMdd input
-CASES = [
+CASES_DATE = [
     ("gl_date_format(d,'yyyy-MM-dd')",
      "gl_date_format(d,'yyyy-MM-dd')",
      "date_format(str_to_date(d,'%Y%m%d'),'%Y-%m-%d')"),
@@ -40,6 +40,29 @@ CASES = [
 ]
 
 
+# Same functions on 14-digit yyyyMMddHHmmss strings that are distinct on every row (no dictionary reuse).
+CASES_DATETIME = [
+    ("gl_date_format(d,'yyyy-MM-dd')",
+     "gl_date_format(d,'yyyy-MM-dd')",
+     "date_format(str_to_date(d,'%Y%m%d%H%i%s'),'%Y-%m-%d')"),
+    ("gl_date_first(d,'month')",
+     "gl_date_first(d,'month')",
+     "date_format(date_trunc('month', str_to_date(d,'%Y%m%d%H%i%s')),'%Y%m%d')"),
+    ("gl_date_last(d,'month')",
+     "gl_date_last(d,'month')",
+     "date_format(last_day(str_to_date(d,'%Y%m%d%H%i%s')),'%Y%m%d')"),
+    ("gl_date_delta(d,'day=+3')",
+     "gl_date_delta(d,'day=+3')",
+     "date_format(days_add(str_to_date(d,'%Y%m%d%H%i%s'),3),'%Y%m%d%H%i%s')"),
+    ("gl_date_diff(d,'20000101','day')",
+     "gl_date_diff(d,'20000101','day')",
+     "cast(datediff(str_to_date(d,'%Y%m%d%H%i%s'),'2000-01-01') as string)"),
+    ("gl_how_many_day(d,'year')",
+     "gl_how_many_day(d,'year')",
+     "cast(dayofyear(str_to_date(d,'%Y%m%d%H%i%s')) as string)"),
+]
+
+
 def connect():
     return pymysql.connect(host="127.0.0.1", port=9030, user="root", autocommit=True)
 
@@ -51,22 +74,29 @@ def run(cur, sql):
     return time.perf_counter() - t0, rows
 
 
-def prepare(cur, n):
+def prepare(cur, n, table, value_expr):
     cur.execute(f"CREATE DATABASE IF NOT EXISTS {DB}")
     cur.execute(f"USE {DB}")
-    cur.execute("SHOW TABLES LIKE 't'")
+    cur.execute(f"SHOW TABLES LIKE '{table}'")
     if cur.fetchall():
-        cur.execute("SELECT count(*) FROM t")
+        cur.execute(f"SELECT count(*) FROM {table}")
         if cur.fetchone()[0] == n:
             return
-        cur.execute("DROP TABLE t")
-    cur.execute("""CREATE TABLE t (id BIGINT NOT NULL, d STRING NOT NULL)
+        cur.execute(f"DROP TABLE {table}")
+    cur.execute(f"""CREATE TABLE {table} (id BIGINT NOT NULL, d STRING NOT NULL)
                    DUPLICATE KEY(id) DISTRIBUTED BY HASH(id) BUCKETS 8
                    PROPERTIES ("replication_num" = "1")""")
-    # dates spread over ~25 years, yyyyMMdd strings
-    cur.execute(f"""INSERT INTO t SELECT generate_series,
-                    date_format(days_add('2000-01-01', generate_series % 9000), '%Y%m%d')
+    cur.execute(f"""INSERT INTO {table} SELECT generate_series, {value_expr}
                     FROM TABLE(generate_series(1, {n}))""")
+
+
+DATASETS = {
+    # ~9000 distinct yyyyMMdd values over ~25 years (low cardinality, typical partition-date column)
+    "date": ("t", "date_format(days_add('2000-01-01', generate_series % 9000), '%Y%m%d')", CASES_DATE),
+    # one distinct yyyyMMddHHmmss value per row (high cardinality, typical event-time column)
+    "datetime": ("t_hc", "date_format(seconds_add('2000-01-01 00:00:00', generate_series * 37), '%Y%m%d%H%i%s')",
+                 CASES_DATETIME),
+}
 
 
 def main():
@@ -74,12 +104,21 @@ def main():
     ap.add_argument("--rows", type=int, default=10_000_000)
     ap.add_argument("--runs", type=int, default=5)
     ap.add_argument("--out", default="bench_result.md")
+    ap.add_argument("--dataset", choices=sorted(DATASETS), default="date")
+    ap.add_argument("--set", action="append", default=[], metavar="VAR=VAL",
+                    help="session variable, e.g. cbo_enable_low_cardinality_optimize=false")
     a = ap.parse_args()
 
     con = connect()
     cur = con.cursor()
-    prepare(cur, a.rows)
+    table, value_expr, cases = DATASETS[a.dataset]
+    prepare(cur, a.rows, table, value_expr)
     cur.execute("SET enable_query_cache = false")
+    for kv in a.set:
+        k, v = kv.split("=", 1)
+        cur.execute(f"SET {k} = {v}")
+    cur.execute(f"SELECT count(DISTINCT d) FROM {table}")
+    distinct = cur.fetchone()[0]
     cur.execute("SHOW VARIABLES LIKE 'pipeline_dop'")
     dop = cur.fetchone()[1]
     cur.execute("SELECT current_version()")
@@ -88,13 +127,13 @@ def main():
     udf_pool = ",".join(str(r[0]) for r in cur.fetchall())
 
     results = []
-    for name, udf, builtin in CASES:
+    for name, udf, builtin in cases:
         # correctness: both expressions must agree on every row
-        cur.execute(f"SELECT count(*) FROM t WHERE {udf} <> {builtin}")
+        cur.execute(f"SELECT count(*) FROM {table} WHERE {udf} <> {builtin}")
         mismatches = cur.fetchone()[0]
         times = {}
         for label, expr in (("udf", udf), ("builtin", builtin)):
-            sql = f"SELECT max({expr}) FROM t"
+            sql = f"SELECT max({expr}) FROM {table}"
             run(cur, sql)  # warm-up
             samples = [run(cur, sql)[0] for _ in range(a.runs)]
             times[label] = statistics.median(samples)
@@ -104,13 +143,14 @@ def main():
               f"x{ratio:6.1f}  mismatches={mismatches}", flush=True)
 
     # baseline: scanning the column without any function
-    run(cur, "SELECT max(d) FROM t")
-    scan = statistics.median([run(cur, "SELECT max(d) FROM t")[0] for _ in range(a.runs)])
+    run(cur, f"SELECT max(d) FROM {table}")
+    scan = statistics.median([run(cur, f"SELECT max(d) FROM {table}")[0] for _ in range(a.runs)])
 
     with open(a.out, "w", encoding="utf-8") as f:
-        f.write(f"StarRocks {version}, rows={a.rows:,}, pipeline_dop={dop}, runs={a.runs} (median), "
-                f"udf_thread_pool_size={udf_pool}\n\n")
-        f.write(f"Baseline `SELECT max(d) FROM t` (scan only): {scan:.3f}s\n\n")
+        f.write(f"StarRocks {version}, dataset={a.dataset} (table {table}, {distinct:,} distinct values), "
+                f"rows={a.rows:,}, pipeline_dop={dop}, runs={a.runs} (median), "
+                f"udf_thread_pool_size={udf_pool}, session sets={a.set or 'none'}\n\n")
+        f.write(f"Baseline `SELECT max(d) FROM {table}` (scan only): {scan:.3f}s\n\n")
         f.write("| case | Java UDF (JNI) s | built-in s | UDF / built-in | UDF rows/s | built-in rows/s | mismatches |\n")
         f.write("|---|---|---|---|---|---|---|\n")
         for name, tu, tb, r, mm in results:
