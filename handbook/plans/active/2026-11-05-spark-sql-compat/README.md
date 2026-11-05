@@ -27,6 +27,7 @@
 | [07-roadmap-cost-benefit.md](07-roadmap-cost-benefit.md) | 方案对比、甘特图路线、人力与成本、收益模型、风险、决策建议 |
 | [func_mapping.csv](func_mapping.csv) | 479 个 Spark 函数逐一分类（A/B/C/D/E）、SR 对应、差异、策略、难度 |
 | [research/](research/) | 5 份原始调研报告（parser、函数注册/UDF、大小写、函数差距、先行实践与语义） |
+| [spark-compat-design.html](spark-compat-design.html) | 全部设计与接管手册合成的单页网页（含可筛选函数映射表），由 `site/build_page.py` 生成 |
 | [handover/](handover/README.md) | **开发接管手册**：开发流程、FE 查询链路、FE 元数据与平台、BE 执行与函数、58 张代码级任务单（含读码后对设计的 15 处修订） |
 
 ## 关键结论

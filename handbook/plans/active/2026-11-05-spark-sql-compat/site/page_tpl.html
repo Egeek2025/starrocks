@@ -1,0 +1,102 @@
+<title>StarRocks Spark SQL 兼容方案</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+/* Layout: sticky left rail of chapters (desktop) / horizontal chip bar (phone), one reading column of ~72ch, wide tables & diagrams scroll inside their own boxes */
+:root{
+  --bg:#f6f7f9; --panel:#ffffff; --fg:#1b2330; --muted:#5b6676; --line:#dde2ea;
+  --accent:#1f6f8b; --accent-soft:#e3f0f4; --warn:#a4441c; --warn-soft:#fbeee6; --ok:#2f7d4f;
+  --code-bg:#eef1f5;
+  --f-body:"IBM Plex Sans","Noto Sans SC",system-ui,sans-serif;
+  --f-head:"Noto Sans SC","IBM Plex Sans",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#12161c; --panel:#191f27; --fg:#e3e8ef; --muted:#9aa5b4; --line:#2a323d;
+  --accent:#6cc0dc; --accent-soft:#1c2f37; --warn:#f0a07a; --warn-soft:#3a2419; --ok:#7fcf9c; --code-bg:#1f2630; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12161c; --panel:#191f27; --fg:#e3e8ef; --muted:#9aa5b4; --line:#2a323d;
+  --accent:#6cc0dc; --accent-soft:#1c2f37; --warn:#f0a07a; --warn-soft:#3a2419; --ok:#7fcf9c; --code-bg:#1f2630; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:15px/1.7 var(--f-body);margin:0}
+.wrap{display:grid;grid-template-columns:210px minmax(0,1fr);gap:40px;max-width:1240px;margin:0 auto;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:32px 80px}
+nav{position:sticky;top:calc(env(safe-area-inset-top,0px) + 24px);align-self:start;display:flex;flex-direction:column;gap:2px}
+nav .brand{font:600 13px/1.4 var(--f-mono);color:var(--muted);letter-spacing:.04em;margin-bottom:12px}
+nav .grp{font:600 11px/1 var(--f-mono);letter-spacing:.08em;color:var(--muted);text-transform:uppercase;margin:14px 10px 4px}
+nav a{color:var(--muted);text-decoration:none;padding:6px 10px;border-radius:6px;font-size:14px}
+nav a:hover,nav a:focus-visible{background:var(--accent-soft);color:var(--accent);outline:none}
+main{min-width:0;max-width:900px}
+.doc{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 32px 28px;margin-bottom:28px;min-width:0}
+h1,h2,h3,h4{font-family:var(--f-head);text-wrap:balance;line-height:1.35}
+h1{font-size:26px;margin:24px 0 12px} h2{font-size:20px;margin:32px 0 10px;padding-top:12px;border-top:1px solid var(--line)}
+h3{font-size:17px;margin:24px 0 8px} h4{font-size:15px}
+p,li{max-width:72ch}
+a{color:var(--accent)}
+code{font-family:var(--f-mono);font-size:.88em;background:var(--code-bg);padding:1px 5px;border-radius:4px}
+.code{overflow-x:auto;background:var(--code-bg);border-radius:8px;margin:12px 0}
+.code pre{margin:0;padding:14px 16px;font:13px/1.55 var(--f-mono)} .code code{background:none;padding:0}
+blockquote{margin:14px 0;padding:10px 16px;border-left:3px solid var(--warn);background:var(--warn-soft);border-radius:0 6px 6px 0;color:var(--fg)}
+blockquote p{margin:4px 0}
+.tbl{overflow-x:auto;margin:12px 0;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:13.5px;font-variant-numeric:tabular-nums}
+th,td{text-align:left;vertical-align:top;padding:7px 10px;border-bottom:1px solid var(--line)}
+th{background:var(--code-bg);font-weight:600;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+.diagram{overflow-x:auto;margin:16px 0;padding:12px;border:1px dashed var(--line);border-radius:8px;background:var(--bg)}
+.diagram pre{margin:0}
+#fnmap .controls{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+#fnmap input{flex:1 1 220px;min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit}
+.chip{border:1px solid var(--line);background:var(--bg);color:var(--fg);padding:6px 12px;border-radius:999px;cursor:pointer;font:inherit;font-size:13px}
+.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.cls{display:inline-block;min-width:22px;text-align:center;font:600 12px/20px var(--f-mono);border-radius:4px;background:var(--code-bg)}
+.cls.B{background:var(--warn-soft);color:var(--warn)} .cls.A{color:var(--ok)} .cls.D{color:var(--accent)}
+#fncount{color:var(--muted);font-size:13px}
+#fntable{max-height:640px;overflow:auto}
+#fntable th{position:sticky;top:0}
+@media (max-width:860px){
+  .wrap{grid-template-columns:minmax(0,1fr);gap:16px;padding-block:16px 60px}
+  nav{position:static;flex-direction:row;flex-wrap:wrap;gap:6px}
+  nav .brand{width:100%;margin:0}
+  nav .grp{width:100%;margin:8px 0 0}
+  nav a{border:1px solid var(--line);font-size:13px;padding:4px 10px}
+  .doc{padding:4px 16px 20px}
+}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+html{scroll-behavior:smooth}
+</style>
+<div class="wrap">
+<nav aria-label="章节"><div class="brand">sql_dialect = 'spark'</div>%%NAV%%</nav>
+<main>
+%%BODY%%
+<section id="fnmap" class="doc">
+<h1>Spark → StarRocks 函数映射表</h1>
+<p>Spark 3.5 内置函数（另含 49 行 4.0/4.1 补充，置信度较低）逐一分类。A 兼容 · <b>B 同名异义</b> · C 别名/改写 · D 缺失 · E 不适用。</p>
+<div class="controls">
+<input id="fnq" type="search" placeholder="搜索函数名、差异、策略…" aria-label="搜索函数">
+<button class="chip" data-c="" aria-pressed="true">全部</button>
+<button class="chip" data-c="A" aria-pressed="false">A</button>
+<button class="chip" data-c="B" aria-pressed="false">B</button>
+<button class="chip" data-c="C" aria-pressed="false">C</button>
+<button class="chip" data-c="D" aria-pressed="false">D</button>
+<button class="chip" data-c="E" aria-pressed="false">E</button>
+</div>
+<div id="fncount"></div>
+<div class="tbl" id="fntable"><table><thead><tr><th>Spark 函数</th><th>类别</th><th>类</th><th>StarRocks 对应</th><th>差异</th><th>策略</th><th>难度</th></tr></thead><tbody id="fnbody"></tbody></table></div>
+</section>
+</main></div>
+<script>
+const ROWS=%%ROWS%%;
+let cls="",q="";
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function render(){
+  const ql=q.toLowerCase();
+  const f=ROWS.filter(r=>(!cls||r[2]===cls)&&(!ql||r.join(" ").toLowerCase().includes(ql)));
+  document.getElementById("fnbody").innerHTML=f.map(r=>`<tr><td><code>${esc(r[0])}</code></td><td>${esc(r[1])}</td><td><span class="cls ${esc(r[2])}">${esc(r[2])}</span></td><td>${esc(r[3])}</td><td>${esc(r[4])}</td><td>${esc(r[5])}</td><td>${esc(r[6])}</td></tr>`).join("");
+  document.getElementById("fncount").textContent=`显示 ${f.length} / ${ROWS.length} 个函数`;
+}
+document.getElementById("fnq").addEventListener("input",e=>{q=e.target.value;render()});
+document.querySelectorAll(".chip").forEach(b=>b.addEventListener("click",()=>{cls=b.dataset.c;document.querySelectorAll(".chip").forEach(x=>x.setAttribute("aria-pressed",x===b?"true":"false"));render()}));
+render();
+</script>

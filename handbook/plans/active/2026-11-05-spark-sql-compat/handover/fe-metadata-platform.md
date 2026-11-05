@@ -70,15 +70,15 @@ sequenceDiagram
     alt 成为 LEADER
         S->>G: transferToLeader() (:1395)
         G->>R: 停 replayer + metaFreshnessChecker
-        G->>J: journal.open(); fencing(); replayJournal(max)
-        G->>G: journalWriter.startDaemon(); feType=LEADER
+        G->>J: journal.open(), fencing(), replayJournal(max)
+        G->>G: journalWriter.startDaemon(), feType=LEADER
         G->>G: runLeaderBootstrapActions (首次启动: initCaseInsensitive) (:1492)
         G->>G: startLeaderOnlyDaemonThreads + startAllNodeTypeDaemonThreads
-        G->>G: MetricRepo.init(); isReady=true; checkCaseInsensitive()
+        G->>G: MetricRepo.init(), isReady=true, checkCaseInsensitive()
     else 成为 FOLLOWER/OBSERVER
         S->>G: transferToNonLeader(newType) (:2041)
         G->>R: createReplayer().start() (:2574)
-        G->>G: startAllNodeTypeDaemonThreads; MetricRepo.init()
+        G->>G: startAllNodeTypeDaemonThreads, MetricRepo.init()
     end
     Main->>G: waitForReady() (:1355)
     Main->>Main: 启动 QeService(MySQL)/Thrift/HTTP/ArrowFlight
@@ -364,7 +364,7 @@ sequenceDiagram
     LO->>LO: createTMasterOpRequest(ctx, forwardTimes) (:327)
     Note over LO: sql, db, catalog, sqlMode, time_zone, user, roles, query_options(mem/timeout),<br/>modified_variables_sql = AstToSQLBuilder.toSQL(ctx.getModifiedSessionVariables())
     LO->>L: Thrift client.forward(TMasterOpRequest)
-    L->>LP: new ConnectContext(null); processor.proxyExecute(params, fe) (FrontendServiceImpl:1285-1305)
+    L->>LP: new ConnectContext(null), processor.proxyExecute(params, fe) (FrontendServiceImpl:1285-1305)
     LP->>LP: 先执行 modified_variables_sql（SET 语句）重建会话变量 (ConnectProcessor:1431-1441)
     LP->>LP: SqlParser.parse(request.sql, ctx.getSessionVariable())  ← 方言/sql_mode 此时已就位
     LP->>V: （SET GLOBAL）setSystemVariable → logGlobalVariableV2 → 副本回放

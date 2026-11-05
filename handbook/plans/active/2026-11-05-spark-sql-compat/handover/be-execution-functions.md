@@ -114,7 +114,7 @@ sequenceDiagram
 
     FE->>IS: brpc exec_plan_fragment(attachment=TExecPlanFragmentParams)
     IS->>IS: submit 到线程池 (internal_service.cpp:302-331)<br/>_exec_plan_fragment 反序列化 thrift (:587)
-    IS->>IS: 校验 batch_size; is_pipeline? (:621)
+    IS->>IS: 校验 batch_size, is_pipeline? (:621)
     IS->>FX: FragmentExecutor.prepare(exec_env, common, unique) (fragment_executor.cpp:894)
     FX->>QC: _prepare_query_ctx(:89) _prepare_fragment_ctx(:150)<br/>_prepare_workgroup(:181) _prepare_runtime_state(:208)
     FX->>PB: _prepare_exec_plan(:423) 建 ExecNode 树→ 分解为 Pipeline<br/>_prepare_pipeline_driver(:749) 实例化 Driver
